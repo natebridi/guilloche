@@ -46,9 +46,13 @@ export function createDevPanel(engine: GuillocheEngine): void {
   material.addBinding(params, "anisotropy", { min: 0, max: 1 });
   material.addBinding(params, "shininess", { min: 8, max: 256 });
   material.addBinding(params, "specStrength", { min: 0, max: 3 });
+  material.addBinding(params, "iridescence", { min: 0, max: 1, step: 0.01 });
+  material.addBinding(params, "spectralPitch", { min: 0.5, max: 8, step: 0.01 });
+  material.addBinding(params, "spectralSat", { min: 0, max: 1, step: 0.01 });
 
   const environment = pane.addFolder({ title: "Environment" });
   environment.addBinding(params, "envStrength", { min: 0, max: 2 });
+  environment.addBinding(params, "envWarmth", { min: -1, max: 1, step: 0.01 });
   environment.addBinding(params, "lightHeight", { min: 0.1, max: 2 });
   environment.addBinding(params, "exposure", { min: 0.1, max: 3 });
 

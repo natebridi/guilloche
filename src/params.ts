@@ -14,7 +14,11 @@ export const params = {
   shininess: 80, // spec exponent [8..256]
   specStrength: 1.0, // [0..3]
   metal: 0, // 0 silver, 1 gold, 2 ink-on-paper
+  iridescence: 0, // spectral term blend [0..1]
+  spectralPitch: 1.6, // fan width control [0.5..8]
+  spectralSat: 0.85, // saturation of the spectral term [0..1]
   envStrength: 0.7,
+  envWarmth: 0, // -1 cool .. 0 neutral .. +1 warm
   lightHeight: 0.55,
   exposure: 1.0,
   offset: 0, // shifts pattern outward from center (radial) / down (linear)

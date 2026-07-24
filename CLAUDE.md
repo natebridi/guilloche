@@ -119,6 +119,19 @@ job is faithful implementation.
   it's mandatory, not optional: drop it and lit-mode groove shading in the
   taper zone visibly disagrees with the flat mask's line positions under
   raking light. `0` disables the effect (byte-identical to pre-Task-6.6b).
+- **iridescence** / **spectralPitch** / **spectralSat** (Task 6.7) —
+  diffraction-grating fringes gated by `anisoWin` (grooves only; land and
+  ink are untouched). `spectralColor(x)` maps a grating-order coordinate
+  `x = spectralPitch·cGrating/m` (m = 1..3 harmonics, `cGrating` from
+  `(L+V)·B` where `B` is the groove-periodicity direction) to a blue→green→
+  red fan, windowed per-harmonic and summed. Its visibility depends on
+  `anisoWin`/`spec` like any other groove-local term — verified correct via
+  the exact math (Node-checked) and by temporarily widening `envSample`'s
+  strip1 window to confirm color pipelines, not just eyeballing the default
+  scene. **envWarmth** tints `envSample`'s `strip1` term only (`stripTint`,
+  Task 6.7) — real but narrow-banded (only visible where the reflection
+  vector's `R.y` lands in strip1's 0.6–0.95 range), so it can look subtle at
+  typical viewing/lighting params despite being fully wired.
 
 ## Status
 
@@ -155,8 +168,11 @@ job is faithful implementation.
   special-casing),
   TASK 6.6b (center amplitude taper — `ampTaper`; hyperbolic envelope on
   amp1/amp2 in `phaseField` plus its product-rule derivative term in
-  `phaseGradient`, collapsing lobes into calm rings near `coord = 0`) —
-  all implemented, pending review.
+  `phaseGradient`, collapsing lobes into calm rings near `coord = 0`),
+  TASK 6.7 (diffraction-grating iridescence + env color temperature —
+  `iridescence`/`spectralPitch`/`spectralSat`/`envWarmth`; spectral term
+  gated by `anisoWin` so it only ever appears in grooves, added before the
+  ACES tonemap, silver/gold only) — all implemented, pending review.
 - NEXT: TASK 7 (typed param schema + URL state).
 - Remaining: 7 typed param schema + URL state · 8 React editor · 9 presets +
   share polish.

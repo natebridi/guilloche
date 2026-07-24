@@ -9,7 +9,11 @@ uniform vec2 u_mouse;
 uniform float u_mode;
 uniform float u_shaded;
 uniform float u_metal;
+uniform float u_iridescence;
+uniform float u_spectralPitch;
+uniform float u_spectralSat;
 uniform float u_envStrength;
+uniform float u_envWarmth;
 uniform float u_lightHeight;
 uniform float u_exposure;
 uniform float u_density;
@@ -126,11 +130,26 @@ vec3 envSample(vec3 d) {
                * (0.5 + 0.5 * d.x);
   float dark   = smoothstep(0.05, -0.25, d.y);   // horizon shadow band
   float floorGlow = smoothstep(-0.55, -1.0, d.y) * 0.12;
+  vec3 warm = vec3(1.05, 0.92, 0.72);
+  vec3 cool = vec3(0.78, 0.90, 1.08);
+  vec3 stripTint = mix(vec3(1.0, 0.98, 0.92),
+                       u_envWarmth > 0.0 ? warm : cool,
+                       abs(u_envWarmth));
   vec3 env = vec3(0.015, 0.017, 0.020)
-           + vec3(1.0, 0.98, 0.92) * strip1 * 2.2
+           + stripTint * strip1 * 2.2
            + vec3(0.9, 0.93, 1.0) * strip2 * 0.8
            + vec3(0.16, 0.17, 0.19) * floorGlow;
   return mix(env, vec3(0.008, 0.009, 0.011), dark * 0.85);
+}
+
+// x in [0..1] maps blue -> green -> red across the visible fan.
+vec3 spectralColor(float x) {
+  vec3 c = vec3(
+    smoothstep(0.50, 0.72, x) + smoothstep(0.20, 0.00, x) * 0.35,
+    smoothstep(0.15, 0.42, x) * smoothstep(0.85, 0.60, x),
+    smoothstep(0.40, 0.12, x)
+  );
+  return clamp(c, 0.0, 1.0);
 }
 
 void main() {
@@ -275,6 +294,18 @@ void main() {
   vec3 col = base * (0.03 + 0.15 * diff) * cav
            + env * specTint * fresnel * cav
            + specTint * spec;
+
+  vec3 spectralSum = vec3(0.0);
+  vec2 B = normalize(gradFieldWorldWin);       // groove periodicity direction
+  float cGrating = abs(dot((L + V).xy, B));
+  for (int m = 1; m <= 3; m++) {
+    float x = u_spectralPitch * cGrating / float(m);
+    float win = smoothstep(0.0, 0.06, x) * smoothstep(1.05, 0.90, x);
+    spectralSum += spectralColor(x) * win / float(m);
+  }
+  float sLuma = dot(spectralSum, vec3(0.299, 0.587, 0.114));
+  spectralSum = mix(vec3(sLuma), spectralSum, u_spectralSat);
+  col += spectralSum * u_iridescence * anisoWin * (0.15 + spec);
 
   col *= u_exposure;
   col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14);
