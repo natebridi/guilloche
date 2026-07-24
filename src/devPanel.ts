@@ -72,6 +72,12 @@ export function createDevPanel(engine: GuillocheEngine): void {
   harmonic.addBinding(params, "freq2", { min: 1, max: 72, step: 1 });
   harmonic.addBinding(params, "phase2", { min: 0, max: 6.283 });
 
+  const texture = pane.addFolder({ title: "Texture" });
+  texture.addBinding(params, "grain", { min: 0, max: 1, step: 0.01 });
+  texture.addBinding(params, "grainScale", { min: 50, max: 2000, step: 1 });
+  texture.addBinding(params, "wobble", { min: 0, max: 1, step: 0.01 });
+  texture.addBinding(params, "filmGrain", { min: 0, max: 0.15, step: 0.001 });
+
   pane.addButton({ title: "Opal Silver" }).on("click", () => {
     params.density = 50;
     params.cutWidth = 1.0;

@@ -33,4 +33,8 @@ export const params = {
   amp2: 0.02,
   freq2: 36, // harmonic (compound cam)
   phase2: 0,
+  grain: 0, // surface sparkle amount [0..1]
+  grainScale: 600, // grit size [50..2000]
+  wobble: 0, // hand-turned line waver [0..1]
+  filmGrain: 0, // photographic post noise [0..0.15]
 };

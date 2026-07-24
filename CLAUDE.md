@@ -111,14 +111,20 @@ job is faithful implementation.
   on steep wave flanks), cuts merge and ridges get shaved smooth on their
   own — this is correct physical behavior, not a bug.
 - **ampTaper** (Task 6.6b) — rose-engine "amplitude reduction": a hyperbolic
-  envelope `env = Cc/(Cc+ampTaper)` (`Cc = max(coord, 0.0)`) scales
+  envelope `env = Cc/(Cc+taperR)` (`Cc = max(coord, 0.0)`) scales
   amp1/amp2's contribution to `phaseField`, collapsing lobes into calm rings
   near `coord = 0` (radial center / linear starting edge) and reaching full
   amplitude as `coord` grows. `phaseGradient` carries the matching
-  product-rule term `envD` (`= ampTaper/denom²` for `coord > 0`, else 0) —
+  product-rule term `envD` (`= taperR/denom²` for `coord > 0`, else 0) —
   it's mandatory, not optional: drop it and lit-mode groove shading in the
   taper zone visibly disagrees with the flat mask's line positions under
   raking light. `0` disables the effect (byte-identical to pre-Task-6.6b).
+  **taperR** (Task 6.6c) = `max(u_ampTaper, 1.5*(amp1+amp2))` in both
+  functions — the raw `u_ampTaper` alone let the envelope's slope (1/taperR)
+  exceed the field's own slope when `(amp1+amp2)/ampTaper` approached 1,
+  folding lines into a dark needle ring at the taper boundary. The `< 1e-5`
+  off-switch still checks `u_ampTaper` itself, so `ampTaper: 0` stays exactly
+  off regardless of amplitude.
 - **iridescence** / **spectralPitch** / **spectralSat** (Task 6.7) —
   diffraction-grating fringes gated by `anisoWin` (grooves only; land and
   ink are untouched). `spectralColor(x)` maps a grating-order coordinate
@@ -132,6 +138,15 @@ job is faithful implementation.
   Task 6.7) — real but narrow-banded (only visible where the reflection
   vector's `R.y` lands in strip1's 0.6–0.95 range), so it can look subtle at
   typical viewing/lighting params despite being fully wired.
+- **grain** / **grainScale** (Task 6.8) — per-pixel `hash21`-based normal
+  perturbation added to `gradH_world` after the pass winner is chosen (so it
+  reads as a material property, not a per-groove one); static in screen
+  space, so it flares/extinguishes with the light instead of crawling.
+  **wobble** perturbs `phaseField` itself (`vnoise(p*6.0)`), so flat and lit
+  renderers see the identical wavered line — its gradient contribution is
+  deliberately ignored (negligible at this amplitude). **filmGrain** is the
+  literal last op before `outColor`, added post-tonemap/gamma so it reads as
+  a photographic layer over the whole frame, background included.
 
 ## Status
 
@@ -172,7 +187,16 @@ job is faithful implementation.
   TASK 6.7 (diffraction-grating iridescence + env color temperature —
   `iridescence`/`spectralPitch`/`spectralSat`/`envWarmth`; spectral term
   gated by `anisoWin` so it only ever appears in grooves, added before the
-  ACES tonemap, silver/gold only) — all implemented, pending review.
+  ACES tonemap, silver/gold only),
+  TASK 6.6c (fixed the amplitude-taper fold artifact — `taperR` floors the
+  effective taper radius by `1.5*(amp1+amp2)` in both `phaseField` and
+  `phaseGradient`, so the envelope's slope can no longer exceed the field's
+  own slope and fold lines into a needle ring),
+  TASK 6.8 (analog texture — `grain`/`grainScale`/`wobble`/`filmGrain` in a
+  new "Texture" panel folder; `hash21`/`vnoise` noise primitives; surface
+  grain perturbs `gradH_world` post-winner, cut wobble perturbs `phaseField`
+  so flat/shaded agree, film grain is the literal last op before `outColor`)
+  — all implemented, pending review.
 - NEXT: TASK 7 (typed param schema + URL state).
 - Remaining: 7 typed param schema + URL state · 8 React editor · 9 presets +
   share polish.

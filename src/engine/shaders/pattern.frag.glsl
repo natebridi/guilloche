@@ -40,6 +40,10 @@ uniform float u_phase1;
 uniform float u_amp2;
 uniform float u_freq2;
 uniform float u_phase2;
+uniform float u_grain;
+uniform float u_grainScale;
+uniform float u_wobble;
+uniform float u_filmGrain;
 
 out vec4 outColor;
 
@@ -54,6 +58,22 @@ float waveFnDeriv(float x) {
   return k * cos(x) * (1.0 - t_ * t_) / tanh(k);
 }
 
+float hash21(vec2 s) {
+  s = fract(s * vec2(123.34, 456.21));
+  s += dot(s, s + 45.32);
+  return fract(s.x * s.y);
+}
+
+float vnoise(vec2 x) {
+  vec2 i = floor(x), f = fract(x);
+  vec2 u2 = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u2.x), mix(c, d, u2.x), u2.y);
+}
+
 // One cutting pass; po = rosette rotation for this pass.
 // Returns the phase value AND writes the offset-adjusted coord to outCoord.
 float phaseField(vec2 p, float po, float shift, out float outCoord) {
@@ -64,10 +84,12 @@ float phaseField(vec2 p, float po, float shift, out float outCoord) {
   outCoord = coord;
   float turn = po + u_twist * coord * TAU;
   float Cc = max(coord, 0.0);
-  float env = (u_ampTaper < 1e-5) ? 1.0 : Cc / (Cc + u_ampTaper);
+  float taperR = max(u_ampTaper, 1.5 * (u_amp1 + u_amp2));
+  float env = (u_ampTaper < 1e-5) ? 1.0 : Cc / (Cc + taperR);
   return coord
     - env * ( u_amp1 * waveFn(u_freq1 * along + u_phase1 + turn)
-            + u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn) );
+            + u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn) )
+    - (vnoise(p * 6.0) - 0.5) * u_wobble * 0.004;
 }
 
 // Gradient of the field for one pass. p is the ALREADY rotated point (pr).
@@ -92,12 +114,13 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
   float v1 = waveFn(u_freq1 * along + u_phase1 + turn);
   float v2 = waveFn(u_freq2 * along + u_phase2 + turn);
   float Cc = max(coord, 0.0);
+  float taperR = max(u_ampTaper, 1.5 * (u_amp1 + u_amp2));
   float env, envD;
   if (u_ampTaper < 1e-5) { env = 1.0; envD = 0.0; }
   else {
-    float denom = Cc + u_ampTaper;
+    float denom = Cc + taperR;
     env  = Cc / denom;
-    envD = (coord > 0.0) ? u_ampTaper / (denom * denom) : 0.0;
+    envD = (coord > 0.0) ? taperR / (denom * denom) : 0.0;
   }
   float S = u_amp1 * v1 + u_amp2 * v2;
   float dFdCoord = 1.0 - envD * S
@@ -256,6 +279,11 @@ void main() {
   }
 
   vec2 gradH_world = gradWorld;
+
+  vec2 cell = floor(p * u_grainScale);
+  vec2 gn = vec2(hash21(cell), hash21(cell + 17.7)) - 0.5;
+  gradH_world += gn * u_grain * 0.06;
+
   vec3 N = normalize(vec3(-gradH_world, 1.0));
   vec3 L = normalize(vec3(u_mouse - p, u_lightHeight));
   vec3 V = vec3(0.0, 0.0, 1.0);
@@ -311,5 +339,6 @@ void main() {
   col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14);
   col = clamp(col, 0.0, 1.0);
   col = pow(col, vec3(1.0 / 2.2));
+  col += (hash21(gl_FragCoord.xy) - 0.5) * u_filmGrain;
   outColor = vec4(col, 1.0);
 }
