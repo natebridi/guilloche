@@ -72,6 +72,157 @@ export function createDevPanel(engine: GuillocheEngine): void {
   harmonic.addBinding(params, "freq2", { min: 1, max: 72, step: 1 });
   harmonic.addBinding(params, "phase2", { min: 0, max: 6.283 });
 
+  pane.addButton({ title: "Opal Silver" }).on("click", () => {
+    params.density = 50;
+    params.cutWidth = 1.0;
+    params.cutterMode = 1;
+    params.offset = 0.005;
+    params.twist = 1.0;
+    params.ampTaper = 0.4;
+    params.waveShape = 0;
+
+    params.mode = 0;
+    params.shaded = 1;
+    params.metal = 0;
+
+    params.relief = 0.49;
+    params.flank = 1.59;
+    params.cavity = 0.51;
+
+    params.anisotropy = 0.60;
+    params.shininess = 122.0;
+    params.specStrength = 0.62;
+    params.iridescence = 0.46;
+    params.spectralPitch = 0.5;
+    params.spectralSat = 0.38;
+
+    params.envStrength = 0.22;
+    params.envWarmth = 1.0;
+    params.lightHeight = 0.1;
+    params.exposure = 0.95;
+
+    params.passes = 2;
+    params.passOffset = 3.14;
+    params.passAngle = 0;
+    params.passShift = 0;
+
+    params.amp1 = 0.06;
+    params.freq1 = 7;
+    params.phase1 = 0;
+
+    params.amp2 = 0;
+    params.freq2 = 0;
+    params.phase2 = 0;
+
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  pane.addButton({ title: "Calm Gold" }).on("click", () => {
+    params.density = 75;
+    params.cutWidth = 1.0;
+    params.cutterMode = 1;
+    params.offset = 0;
+    params.twist = 0;
+    params.ampTaper = 0.4;
+    params.waveShape = 0;
+
+    params.mode = 0;
+    params.shaded = 1;
+    params.metal = 1;
+
+    params.relief = 4.0;
+    params.flank = 3.0;
+    params.cavity = 1.0;
+
+    params.anisotropy = 0.30;
+    params.shininess = 72.0;
+    params.specStrength = 1.0;
+    params.iridescence = 0;
+    params.spectralPitch = 3.9;
+    params.spectralSat = 0.5;
+
+    params.envStrength = 0.65;
+    params.envWarmth = 1.0;
+    params.lightHeight = 1.22;
+    params.exposure = 0.67;
+
+    params.passes = 2;
+    params.passOffset = 2.5;
+    params.passAngle = 0;
+    params.passShift = 0;
+
+    params.amp1 = 0.05;
+    params.freq1 = 13;
+    params.phase1 = 0;
+
+    params.amp2 = 0.02;
+    params.freq2 = 1;
+    params.phase2 = 0;
+
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  pane.addButton({ title: "Psych" }).on("click", () => {
+    params.density = 32;
+    params.cutWidth = 0.05;
+    params.cutterMode = 0;
+    params.offset = 0.025;
+    params.twist = -3;
+    params.ampTaper = 0.186;
+    params.waveShape = 2.22;
+    params.minLinePx = 0;
+
+    params.mode = 0;
+    params.shaded = 0;
+    params.metal = 2;
+
+    params.passes = 1;
+
+    params.amp1 = 0.16;
+    params.freq1 = 23;
+    params.phase1 = 6.28;
+
+    params.amp2 = 0.13;
+    params.freq2 = 1;
+    params.phase2 = 3;
+
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  pane.addButton({ title: "Spiro" }).on("click", () => {
+    params.density = 73;
+    params.cutWidth = 0.05;
+    params.cutterMode = 0;
+    params.offset = 0.065;
+    params.twist = 0;
+    params.ampTaper = 0.4;
+    params.waveShape = 0;
+    params.minLinePx = 0;
+
+    params.mode = 0;
+    params.shaded = 0;
+    params.metal = 2;
+
+    params.passes = 4;
+    params.passOffset = 0.03;
+    params.passAngle = 0;
+    params.passShift = 0.0025;
+
+    params.amp1 = 0.06;
+    params.freq1 = 16;
+    params.phase1 = 0;
+
+    params.amp2 = 0;
+    params.freq2 = 1;
+    params.phase2 = 0;
+
+    pane.refresh();
+    engine.markDirty();
+  });
+
   pane.addButton({ title: "Randomize" }).on("click", () => {
     params.density = randInt(14, 70);
     params.amp1 = rand(0.02, 0.14);
