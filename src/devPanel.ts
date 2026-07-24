@@ -25,6 +25,10 @@ export function createDevPanel(engine: GuillocheEngine): void {
   });
   pattern.addBinding(params, "density", { min: 6, max: 90, step: 1 });
   pattern.addBinding(params, "cutWidth", { min: 0.05, max: 1, step: 0.01 });
+  pattern.addBinding(params, "cutterMode", {
+    options: { "Feed-relative": 0, "Fixed cutter": 1 },
+  });
+  pattern.addBinding(params, "ampTaper", { min: 0, max: 0.4, step: 0.002 });
   pattern.addBinding(params, "offset", { min: 0, max: 0.6, step: 0.005 });
   pattern.addBinding(params, "twist", { min: -3, max: 3, step: 0.05 });
   pattern.addBinding(params, "waveShape", { min: 0.001, max: 4, step: 0.01 });

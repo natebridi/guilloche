@@ -3,6 +3,8 @@ export const params = {
   shaded: 1, // 0 = flat engraving, 1 = lit relief
   density: 28, // line families per unit phase
   cutWidth: 0.35, // cut width as fraction of line pitch, (0..1], 1 = abutting
+  cutterMode: 1, // 0 = feed-relative (constant field width), 1 = fixed cutter
+  ampTaper: 0, // taper radius; 0 = off (current behavior) [0..0.4]
   minLinePx: 0.75, // legibility floor for flat mode, in px
   waveShape: 0.001, // sine->square shaping, 0.001 = pure sine
   relief: 1.0, // groove depth scale

@@ -76,7 +76,7 @@ job is faithful implementation.
   arbitrary nonzero direction (`vec2(1.0, 0.0)`) purely so `normalize()`
   doesn't NaN — the iso/aniso blend weight (`anisoWin`, Task 6.5b) is 0 there
   anyway, so the arbitrary direction is never visible. **anisoWin** is a
-  screen-space AA band at the cut EDGE (`half_ ± aaF`), not a fraction of
+  screen-space AA band at the cut EDGE (`halfEff ± aaF`), not a fraction of
   `qWin` — blending across `qWin` instead hugged every groove with a dark
   outline, worst at low `cutWidth` (fixed in Task 6.5b).
 - **metal** (Task 6) — 0 silver / 1 gold / 2 ink. Silver/gold share the lit
@@ -99,6 +99,26 @@ job is faithful implementation.
   valleys darken. Tonemap is the ACES (Narkowicz) fit, not Reinhard — color
   is clamped to [0,1] before the gamma pow, so nothing hard-clips even at
   high `exposure`.
+- **cutterMode** (Task 6.6) — 0 = feed-relative (today's constant field-unit
+  width), 1 = fixed physical cutter (default). Physical groove width =
+  field-width / `|gField|`, so fixed width means field half-width scales
+  WITH `|gField|`: `halfEff = 0.5 * cutWidth * clamp(gMag, 0.05, 4.0)`. Used
+  everywhere `half_` was (mask edge, `q`, `dq/dd`, `anisoWin`) in both
+  `lineMask` and the lit loop — `lineMask` now also calls `phaseGradient`.
+  `halfEff` is treated as locally constant in the gradient chain (its own
+  spatial derivative is deliberately ignored). No overlap special-casing:
+  where `halfEff` grows past the half-pitch (e.g. near a radial center, or
+  on steep wave flanks), cuts merge and ridges get shaved smooth on their
+  own — this is correct physical behavior, not a bug.
+- **ampTaper** (Task 6.6b) — rose-engine "amplitude reduction": a hyperbolic
+  envelope `env = Cc/(Cc+ampTaper)` (`Cc = max(coord, 0.0)`) scales
+  amp1/amp2's contribution to `phaseField`, collapsing lobes into calm rings
+  near `coord = 0` (radial center / linear starting edge) and reaching full
+  amplitude as `coord` grows. `phaseGradient` carries the matching
+  product-rule term `envD` (`= ampTaper/denom²` for `coord > 0`, else 0) —
+  it's mandatory, not optional: drop it and lit-mode groove shading in the
+  taper zone visibly disagrees with the flat mask's line positions under
+  raking light. `0` disables the effect (byte-identical to pre-Task-6.6b).
 
 ## Status
 
@@ -127,8 +147,16 @@ job is faithful implementation.
   TASK 6.5b (fixed dark contours hugging cut edges — the iso/aniso spec
   blend now uses `anisoWin`, a screen-space AA band at the cut edge computed
   per-pass and carried through the depth-test like `qWin`/`gradWorld`,
-  instead of blending across the outer 15% of `qWin`) — all implemented,
-  pending review.
+  instead of blending across the outer 15% of `qWin`),
+  TASK 6.6 (fixed-physical-cutter model — `cutterMode`; field half-width
+  now scales with the local `|phaseGradient|` in both `lineMask` and the lit
+  loop via `halfEff`, replacing the constant `half_`; overlapping cuts near
+  the radial center or on steep wave flanks merge/shave automatically, no
+  special-casing),
+  TASK 6.6b (center amplitude taper — `ampTaper`; hyperbolic envelope on
+  amp1/amp2 in `phaseField` plus its product-rule derivative term in
+  `phaseGradient`, collapsing lobes into calm rings near `coord = 0`) —
+  all implemented, pending review.
 - NEXT: TASK 7 (typed param schema + URL state).
 - Remaining: 7 typed param schema + URL state · 8 React editor · 9 presets +
   share polish.

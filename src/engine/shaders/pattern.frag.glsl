@@ -14,6 +14,8 @@ uniform float u_lightHeight;
 uniform float u_exposure;
 uniform float u_density;
 uniform float u_cutWidth;
+uniform float u_cutterMode;
+uniform float u_ampTaper;
 uniform float u_minLinePx;
 uniform float u_waveShape;
 uniform float u_relief;
@@ -57,9 +59,11 @@ float phaseField(vec2 p, float po, float shift, out float outCoord) {
   coord -= u_offset + shift;
   outCoord = coord;
   float turn = po + u_twist * coord * TAU;
+  float Cc = max(coord, 0.0);
+  float env = (u_ampTaper < 1e-5) ? 1.0 : Cc / (Cc + u_ampTaper);
   return coord
-    - u_amp1 * waveFn(u_freq1 * along + u_phase1 + turn)
-    - u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn);
+    - env * ( u_amp1 * waveFn(u_freq1 * along + u_phase1 + turn)
+            + u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn) );
 }
 
 // Gradient of the field for one pass. p is the ALREADY rotated point (pr).
@@ -81,8 +85,20 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
   float turn = po + T * coord;
   float w1 = waveFnDeriv(u_freq1 * along + u_phase1 + turn);
   float w2 = waveFnDeriv(u_freq2 * along + u_phase2 + turn);
-  float dFdCoord = 1.0 - (u_amp1 * w1 + u_amp2 * w2) * T;
-  float dFdAlong = -(u_amp1 * w1 * u_freq1 + u_amp2 * w2 * u_freq2);
+  float v1 = waveFn(u_freq1 * along + u_phase1 + turn);
+  float v2 = waveFn(u_freq2 * along + u_phase2 + turn);
+  float Cc = max(coord, 0.0);
+  float env, envD;
+  if (u_ampTaper < 1e-5) { env = 1.0; envD = 0.0; }
+  else {
+    float denom = Cc + u_ampTaper;
+    env  = Cc / denom;
+    envD = (coord > 0.0) ? u_ampTaper / (denom * denom) : 0.0;
+  }
+  float S = u_amp1 * v1 + u_amp2 * v2;
+  float dFdCoord = 1.0 - envD * S
+                       - env * (u_amp1 * w1 + u_amp2 * w2) * T;
+  float dFdAlong = -env * (u_amp1 * w1 * u_freq1 + u_amp2 * w2 * u_freq2);
   return dFdCoord * gradCoord + dFdAlong * gradAlong;
 }
 
@@ -92,7 +108,12 @@ float lineMask(vec2 p, float po, float shift) {
   float u = fract(u_density * f + 0.5) - 0.5; // position within pitch
   float d = abs(u);                            // distance from line center
   float aa = max(u_density * fwidth(f), 1e-6); // AA width in phase units
-  float half_ = max(0.5 * u_cutWidth, u_minLinePx * aa);
+  vec2 gField = phaseGradient(p, po, shift);
+  float gMag = length(gField);
+  float halfEff = (u_cutterMode < 0.5)
+      ? 0.5 * u_cutWidth
+      : 0.5 * u_cutWidth * clamp(gMag, 0.05, 4.0);
+  float half_ = max(halfEff, u_minLinePx * aa);
   float line = 1.0 - smoothstep(half_ - aa, half_ + aa, d);
   float inner = smoothstep(0.0, max(fwidth(c) * 1.5, 1e-5), c);
   return line * inner;
@@ -177,15 +198,18 @@ void main() {
     float f = phaseField(pr, po, shift, c);
     float u = fract(u_density * f + 0.5) - 0.5;
     float d = abs(u);
-    float half_ = 0.5 * u_cutWidth;
-    float q = clamp(1.0 - d / half_, 0.0, 1.0);
+    vec2 gField = phaseGradient(pr, po, shift);
+    float gMag = length(gField);
+    float halfEff = (u_cutterMode < 0.5)
+        ? 0.5 * u_cutWidth
+        : 0.5 * u_cutWidth * clamp(gMag, 0.05, 4.0);
+    float q = clamp(1.0 - d / halfEff, 0.0, 1.0);
     float h = -u_relief * 0.02 * pow(q, u_flank);
     float aaF = max(u_density * fwidth(f), 1e-6);
-    float anisoW = 1.0 - smoothstep(half_ - 1.5 * aaF, half_ + 0.5 * aaF, d);
-    vec2 gField = phaseGradient(pr, po, shift);
+    float anisoW = 1.0 - smoothstep(halfEff - 1.5 * aaF, halfEff + 0.5 * aaF, d);
     vec2 gradLocal;
-    if (d < half_) {
-      float dqdd = -1.0 / half_;
+    if (d < halfEff) {
+      float dqdd = -1.0 / halfEff;
       float dhdq = -u_relief * 0.02 * u_flank * pow(q, u_flank - 1.0);
       float dddf = u_density * sign(u);
       gradLocal = (dhdq) * (dqdd) * (dddf) * gField;
