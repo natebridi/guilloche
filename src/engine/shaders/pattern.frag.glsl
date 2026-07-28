@@ -8,12 +8,24 @@ uniform vec2 u_res;
 uniform vec2 u_mouse;
 uniform float u_mode;
 uniform float u_shaded;
+uniform float u_invert;
+uniform float u_flatHue;
+uniform float u_flatSat;
 uniform float u_metal;
 uniform float u_iridescence;
 uniform float u_spectralPitch;
 uniform float u_spectralSat;
+uniform float u_fringes;
+uniform float u_glint;
+uniform float u_enamel;
+uniform float u_enamelHue;
+uniform float u_enamelDepth;
+uniform float u_clearcoat;
 uniform float u_envStrength;
 uniform float u_envWarmth;
+uniform float u_keyStrength;
+uniform float u_lightHue;
+uniform float u_lightSat;
 uniform float u_lightHeight;
 uniform float u_exposure;
 uniform float u_density;
@@ -42,7 +54,6 @@ uniform float u_freq2;
 uniform float u_phase2;
 uniform float u_grain;
 uniform float u_grainScale;
-uniform float u_wobble;
 uniform float u_filmGrain;
 
 out vec4 outColor;
@@ -74,6 +85,36 @@ float vnoise(vec2 x) {
   return mix(mix(a, b, u2.x), mix(c, d, u2.x), u2.y);
 }
 
+// Returns vec2(env, envD) for the amplitude taper at this coord.
+vec2 taperEnv(float coord) {
+    if (u_ampTaper < 1e-5) return vec2(1.0, 0.0);
+    float Cc = max(coord, 0.0);
+    float R0 = 1.5 * (u_amp1 + u_amp2);
+
+    // Raw hyperbolic envelope: 0 at the center, 1 far out.
+    float envRaw, envDRaw;
+    if (u_ampTaper < R0) {
+        // Below the fold-safe floor: slider acts as taper STRENGTH.
+        float s = u_ampTaper / max(R0, 1e-5);
+        float denom = Cc + R0;
+        envRaw  = 1.0 - s * R0 / denom;
+        envDRaw = (coord > 0.0) ? s * R0 / (denom * denom) : 0.0;
+    } else {
+        // At or above the floor: slider is the taper RADIUS, as before.
+        float denom = Cc + u_ampTaper;
+        envRaw  = Cc / denom;
+        envDRaw = (coord > 0.0) ? u_ampTaper / (denom * denom) : 0.0;
+    }
+
+    // Lift the envelope into [F0, 1] so the innermost cuts keep a floor of
+    // amplitude instead of collapsing to a needle near the center — this is
+    // what makes the taper less aggressive as coord -> 0. Scaling envD by
+    // (1 - F0) also lowers the peak envelope slope, so the lift can only ever
+    // help the fold bound, never hurt it.
+    const float F0 = 0.25;
+    return vec2(F0 + (1.0 - F0) * envRaw, (1.0 - F0) * envDRaw);
+}
+
 // One cutting pass; po = rosette rotation for this pass.
 // Returns the phase value AND writes the offset-adjusted coord to outCoord.
 float phaseField(vec2 p, float po, float shift, out float outCoord) {
@@ -85,11 +126,10 @@ float phaseField(vec2 p, float po, float shift, out float outCoord) {
   float turn = po + u_twist * coord * TAU;
   float Cc = max(coord, 0.0);
   float taperR = max(u_ampTaper, 1.5 * (u_amp1 + u_amp2));
-  float env = (u_ampTaper < 1e-5) ? 1.0 : Cc / (Cc + taperR);
+  float env = taperEnv(coord).x;
   return coord
     - env * ( u_amp1 * waveFn(u_freq1 * along + u_phase1 + turn)
-            + u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn) )
-    - (vnoise(p * 6.0) - 0.5) * u_wobble * 0.004;
+            + u_amp2 * waveFn(u_freq2 * along + u_phase2 + turn) );
 }
 
 // Gradient of the field for one pass. p is the ALREADY rotated point (pr).
@@ -115,13 +155,10 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
   float v2 = waveFn(u_freq2 * along + u_phase2 + turn);
   float Cc = max(coord, 0.0);
   float taperR = max(u_ampTaper, 1.5 * (u_amp1 + u_amp2));
-  float env, envD;
-  if (u_ampTaper < 1e-5) { env = 1.0; envD = 0.0; }
-  else {
-    float denom = Cc + taperR;
-    env  = Cc / denom;
-    envD = (coord > 0.0) ? taperR / (denom * denom) : 0.0;
-  }
+  vec2 te = taperEnv(coord);
+  float env = te.x;
+  float envD = te.y;
+
   float S = u_amp1 * v1 + u_amp2 * v2;
   float dFdCoord = 1.0 - envD * S
                        - env * (u_amp1 * w1 + u_amp2 * w2) * T;
@@ -132,7 +169,7 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
 float lineMask(vec2 p, float po, float shift) {
   float c;
   float f = phaseField(p, po, shift, c);
-  float u = fract(u_density * f + 0.5) - 0.5; // position within pitch
+  float u = fract(u_density * f) - 0.5; // position within pitch
   float d = abs(u);                            // distance from line center
   float aa = max(u_density * fwidth(f), 1e-6); // AA width in phase units
   vec2 gField = phaseGradient(p, po, shift);
@@ -142,7 +179,7 @@ float lineMask(vec2 p, float po, float shift) {
       : 0.5 * u_cutWidth * clamp(gMag, 0.05, 4.0);
   float half_ = max(halfEff, u_minLinePx * aa);
   float line = 1.0 - smoothstep(half_ - aa, half_ + aa, d);
-  float inner = smoothstep(0.0, max(fwidth(c) * 1.5, 1e-5), c);
+  float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f);
   return line * inner;
 }
 
@@ -165,6 +202,11 @@ vec3 envSample(vec3 d) {
   return mix(env, vec3(0.008, 0.009, 0.011), dark * 0.85);
 }
 
+vec3 hue2rgb(float h) {
+  vec3 k = vec3(0.0, 2.0 / 3.0, 1.0 / 3.0);
+  return clamp(abs(fract(vec3(h) + k) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+}
+
 // x in [0..1] maps blue -> green -> red across the visible fan.
 vec3 spectralColor(float x) {
   vec3 c = vec3(
@@ -180,26 +222,6 @@ void main() {
 
   int n = int(u_passes + 0.5);
 
-  if (u_metal > 1.5) {
-    // Ink-on-paper: the flat Task 2 path, ignoring lighting entirely.
-    float line = 0.0;
-    for (int i = 0; i < 4; i++) {
-      if (i >= n) break;
-      float a = float(i) * u_passAngle;
-      float ca = cos(a), sa = sin(a);
-      vec2 pr = vec2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y); // rotate by -a
-      line = max(line, lineMask(pr, float(i) * u_passOffset,
-                                float(i) * u_passShift));
-    }
-
-    vec3 plate  = vec3(0.93, 0.92, 0.895);
-    vec3 stroke = vec3(0.10, 0.14, 0.12);
-    vec3 col = mix(plate, stroke, line);
-    col *= 1.0 - 0.35 * dot(p, p);   // vignette
-    outColor = vec4(col, 1.0);
-    return;
-  }
-
   if (u_shaded < 0.5) {
     // Combine passes: deepest cut wins.
     float line = 0.0;
@@ -212,9 +234,13 @@ void main() {
                                 float(i) * u_passShift));
     }
 
-    // Flat engraving render:
-    vec3 plate  = vec3(0.13, 0.135, 0.15);
-    vec3 stroke = vec3(0.78, 0.80, 0.86);
+    // Flat engraving render. The lighter element is hue/sat-tintable; invert
+    // swaps which element is light — u_invert = 1 gives dark lines on a light
+    // (paper) plate, recovering the old ink-on-paper look.
+    vec3 neutralDark = vec3(0.13, 0.135, 0.15);
+    vec3 tintLight = mix(vec3(0.92, 0.92, 0.90), hue2rgb(u_flatHue), u_flatSat);
+    vec3 plate  = (u_invert > 0.5) ? tintLight : neutralDark;
+    vec3 stroke = (u_invert > 0.5) ? neutralDark : tintLight;
     vec3 col = mix(plate, stroke, line);
     col *= 1.0 - 0.35 * dot(p, p);   // vignette
     outColor = vec4(col, 1.0);
@@ -227,6 +253,7 @@ void main() {
   float qWin = 0.0;
   vec2 gradFieldWorldWin = vec2(1.0, 0.0);
   float anisoWin = 0.0;
+  float dWin = 0.0;
 
   for (int i = 0; i < 4; i++) {
     if (i >= n) break;
@@ -238,7 +265,7 @@ void main() {
 
     float c;
     float f = phaseField(pr, po, shift, c);
-    float u = fract(u_density * f + 0.5) - 0.5;
+    float u = fract(u_density * f) - 0.5;
     float d = abs(u);
     vec2 gField = phaseGradient(pr, po, shift);
     float gMag = length(gField);
@@ -260,9 +287,10 @@ void main() {
       gradLocal = vec2(0.0);
     }
 
-    float inner = smoothstep(0.0, max(fwidth(c) * 1.5, 1e-5), c);
+    float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f);
     h *= inner;
     gradLocal *= inner;
+    gradLocal *= smoothstep(0.0, 0.30, q); // fillet the lip: fade wall slope to flat over the outer 30% of the cut
 
     vec2 gWorld = vec2(ca * gradLocal.x - sa * gradLocal.y,
                         sa * gradLocal.x + ca * gradLocal.y);
@@ -275,20 +303,39 @@ void main() {
       qWin = q;
       gradFieldWorldWin = gFieldWorld;
       anisoWin = anisoW;
+      dWin = d;
     }
   }
 
   vec2 gradH_world = gradWorld;
 
-  vec2 cell = floor(p * u_grainScale);
-  vec2 gn = vec2(hash21(cell), hash21(cell + 17.7)) - 0.5;
-  gradH_world += gn * u_grain * 0.06;
+  if (u_grain > 0.0) {
+    vec2 Bw = (length(gradFieldWorldWin) > 1e-5)
+        ? normalize(gradFieldWorldWin) : vec2(1.0, 0.0);
+    vec2 Tw = vec2(-Bw.y, Bw.x);
+    // Groove-aligned noise coords, stretched 1:6.7 along the cut direction:
+    vec2 gc = vec2(dot(p, Bw), dot(p, Tw) * 0.15) * u_grainScale;
+    float streak = vnoise(gc) - 0.5;
+    // Perturb ACROSS the groove, scaled by local slope, gated into cuts:
+    float slopeW = 0.06 + 0.6 * length(gradH_world);
+    gradH_world += Bw * streak * u_grain * slopeW * (0.3 + 0.7 * anisoWin);
+    // Faint residual grain on flat land:
+    vec2 cell = floor(p * u_grainScale);
+    vec2 landG = vec2(hash21(cell), hash21(cell + 17.7)) - 0.5;
+    gradH_world += landG * u_grain * 0.012 * (1.0 - anisoWin);
+  }
+
+  float gLen = length(gradH_world);
+  if (gLen > 2.5) gradH_world *= 2.5 / gLen;
 
   vec3 N = normalize(vec3(-gradH_world, 1.0));
   vec3 L = normalize(vec3(u_mouse - p, u_lightHeight));
   vec3 V = vec3(0.0, 0.0, 1.0);
   vec3 H = normalize(L + V);
   float diff = max(dot(N, L), 0.0);
+
+  vec3 lightCol = mix(vec3(1.0), hue2rgb(u_lightHue), u_lightSat)
+                  * u_keyStrength;
 
   // Groove direction = perpendicular to the field gradient, in screen plane:
   vec2 g = gradFieldWorldWin;
@@ -319,21 +366,59 @@ void main() {
   float fresnel = 0.6 + 0.4 * pow(1.0 - NdotV, 3.0);
   float cav = 1.0 - u_cavity * pow(qWin, 1.5);
   vec3 env = envSample(R) * u_envStrength;
-  vec3 col = base * (0.03 + 0.15 * diff) * cav
+  vec3 col = base * (0.03 + 0.15 * diff * lightCol) * cav
            + env * specTint * fresnel * cav
-           + specTint * spec;
+           + specTint * spec * lightCol;
 
   vec3 spectralSum = vec3(0.0);
-  vec2 B = normalize(gradFieldWorldWin);       // groove periodicity direction
+  vec2 B = (length(gradFieldWorldWin) > 1e-5)
+      ? normalize(gradFieldWorldWin) : vec2(1.0, 0.0);
   float cGrating = abs(dot((L + V).xy, B));
+  float xBase = u_spectralPitch * cGrating;
   for (int m = 1; m <= 3; m++) {
-    float x = u_spectralPitch * cGrating / float(m);
+    float x = xBase / float(m) + (qWin - 0.5) * 0.35;  // sweep across cut
     float win = smoothstep(0.0, 0.06, x) * smoothstep(1.05, 0.90, x);
-    spectralSum += spectralColor(x) * win / float(m);
+    float band = (u_fringes < 0.05)
+        ? 1.0
+        : (0.55 + 0.45 * cos(TAU * x * u_fringes));
+    spectralSum += spectralColor(clamp(x, 0.0, 1.0)) * win * band
+                   / float(m);
   }
   float sLuma = dot(spectralSum, vec3(0.299, 0.587, 0.114));
   spectralSum = mix(vec3(sLuma), spectralSum, u_spectralSat);
   col += spectralSum * u_iridescence * anisoWin * (0.15 + spec);
+
+  if (u_glint > 0.0) {
+    float edgeBand  = anisoWin * (1.0 - anisoWin) * 4.0;   // cut edges
+    float crestBand = smoothstep(0.40, 0.49, dWin);        // ridge crests
+    vec2 gcell = floor(p * u_grainScale * 1.7);
+    float sel = step(0.01, hash21(gcell));        // ~25% of cells eligible
+    vec2 mn = (vec2(hash21(gcell + 3.1), hash21(gcell + 7.7)) - 0.5) * 1.99;
+    vec3 Ng = normalize(vec3(N.xy + mn, N.z));    // per-glint micro-normal
+    float gs = pow(max(dot(Ng, H), 0.0), 60.0);  // sharp personal flash
+    float g = (edgeBand + 0.6 * crestBand) * sel * gs * u_glint * 3.0;
+    col += (vec3(0.85) + spectralSum * 0.6) * g * lightCol;
+  }
+
+  if (u_enamel > 0.0) {
+    vec3 dye = hue2rgb(u_enamelHue);
+    vec3 absorb = (vec3(1.0) - dye) * u_enamelDepth;
+    float path = 1.0 / max(NdotV, 0.35);          // longer path at grazing
+    vec3 trans = exp(-absorb * path);
+    // Mild thin-film sheen in the coating:
+    vec3 film = 0.5 + 0.5 * cos(u_enamelDepth * 4.0 * NdotV * TAU
+                                + vec3(0.0, 2.1, 4.2));
+    trans *= mix(vec3(1.0), film, 0.3 * u_enamel);
+    // The enamel fills the grooves: its top surface is FLAT, so the
+    // clear coat lights from the plate normal, not the relief:
+    vec3 Nc = vec3(0.0, 0.0, 1.0);
+    float ccSpec = pow(max(dot(Nc, normalize(L + V)), 0.0), 180.0)
+                   * u_clearcoat;
+    vec3 ccEnv = envSample(reflect(-V, Nc)) * u_envStrength * 0.35
+                 * u_clearcoat;
+    vec3 enameled = col * trans + ccEnv + vec3(ccSpec) * lightCol;
+    col = mix(col, enameled, u_enamel);
+  }
 
   col *= u_exposure;
   col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14);

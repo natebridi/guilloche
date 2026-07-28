@@ -29,10 +29,17 @@ export function createDevPanel(engine: GuillocheEngine): void {
     options: { "Feed-relative": 0, "Fixed cutter": 1 },
   });
   pattern.addBinding(params, "ampTaper", { min: 0, max: 0.4, step: 0.002 });
-  pattern.addBinding(params, "offset", { min: 0, max: 0.6, step: 0.005 });
+  pattern.addBinding(params, "offset", { min: 0, max: 0.2, step: 0.002 });
   pattern.addBinding(params, "twist", { min: -3, max: 3, step: 0.05 });
   pattern.addBinding(params, "waveShape", { min: 0.001, max: 4, step: 0.01 });
   pattern.addBinding(params, "minLinePx", { min: 0, max: 2, step: 0.05 });
+
+  const flat = pane.addFolder({ title: "Flat" });
+  flat.addBinding(params, "invert", {
+    options: { "Light on dark": 0, "Dark on light": 1 },
+  });
+  flat.addBinding(params, "flatHue", { min: 0, max: 1, step: 0.01 });
+  flat.addBinding(params, "flatSat", { min: 0, max: 1, step: 0.01 });
 
   const surface = pane.addFolder({ title: "Surface" });
   surface.addBinding(params, "relief", { min: 0.2, max: 4 });
@@ -41,7 +48,7 @@ export function createDevPanel(engine: GuillocheEngine): void {
 
   const material = pane.addFolder({ title: "Material" });
   material.addBinding(params, "metal", {
-    options: { Silver: 0, Gold: 1, Ink: 2 },
+    options: { Silver: 0, Gold: 1 },
   });
   material.addBinding(params, "anisotropy", { min: 0, max: 1 });
   material.addBinding(params, "shininess", { min: 8, max: 256 });
@@ -49,12 +56,23 @@ export function createDevPanel(engine: GuillocheEngine): void {
   material.addBinding(params, "iridescence", { min: 0, max: 1, step: 0.01 });
   material.addBinding(params, "spectralPitch", { min: 0.5, max: 8, step: 0.01 });
   material.addBinding(params, "spectralSat", { min: 0, max: 1, step: 0.01 });
+  material.addBinding(params, "fringes", { min: 0, max: 8, step: 0.1 });
+  material.addBinding(params, "glint", { min: 0, max: 1, step: 0.01 });
+
+  const enamel = pane.addFolder({ title: "Enamel" });
+  enamel.addBinding(params, "enamel", { min: 0, max: 1, step: 0.01 });
+  enamel.addBinding(params, "enamelHue", { min: 0, max: 1, step: 0.01 });
+  enamel.addBinding(params, "enamelDepth", { min: 0.2, max: 4, step: 0.01 });
+  enamel.addBinding(params, "clearcoat", { min: 0, max: 1, step: 0.01 });
 
   const environment = pane.addFolder({ title: "Environment" });
   environment.addBinding(params, "envStrength", { min: 0, max: 2 });
   environment.addBinding(params, "envWarmth", { min: -1, max: 1, step: 0.01 });
   environment.addBinding(params, "lightHeight", { min: 0.1, max: 2 });
   environment.addBinding(params, "exposure", { min: 0.1, max: 3 });
+  environment.addBinding(params, "keyStrength", { min: 0, max: 2, step: 0.01 });
+  environment.addBinding(params, "lightHue", { min: 0, max: 1, step: 0.01 });
+  environment.addBinding(params, "lightSat", { min: 0, max: 1, step: 0.01 });
 
   const passes = pane.addFolder({ title: "Passes" });
   passes.addBinding(params, "passes", { min: 1, max: 4, step: 1 });
@@ -75,7 +93,6 @@ export function createDevPanel(engine: GuillocheEngine): void {
   const texture = pane.addFolder({ title: "Texture" });
   texture.addBinding(params, "grain", { min: 0, max: 1, step: 0.01 });
   texture.addBinding(params, "grainScale", { min: 50, max: 2000, step: 1 });
-  texture.addBinding(params, "wobble", { min: 0, max: 1, step: 0.01 });
   texture.addBinding(params, "filmGrain", { min: 0, max: 0.15, step: 0.001 });
 
   pane.addButton({ title: "Opal Silver" }).on("click", () => {
@@ -182,7 +199,8 @@ export function createDevPanel(engine: GuillocheEngine): void {
 
     params.mode = 0;
     params.shaded = 0;
-    params.metal = 2;
+    params.metal = 0;
+    params.invert = 1;
 
     params.passes = 1;
 
@@ -210,7 +228,8 @@ export function createDevPanel(engine: GuillocheEngine): void {
 
     params.mode = 0;
     params.shaded = 0;
-    params.metal = 2;
+    params.metal = 0;
+    params.invert = 1;
 
     params.passes = 4;
     params.passOffset = 0.03;
@@ -225,6 +244,146 @@ export function createDevPanel(engine: GuillocheEngine): void {
     params.freq2 = 1;
     params.phase2 = 0;
 
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  // --- Reference-image targets (row,col), flat geometry first ---
+
+  pane.addButton({ title: "Ref [0,1] Pinwheel" }).on("click", () => {
+    params.mode = 0;
+    params.shaded = 1;
+    params.invert = 0;
+    params.density = 72;
+    params.cutWidth = 0.18;
+    params.cutterMode = 1;
+    params.offset = 0.032;
+    params.twist = 0.35;
+    params.ampTaper = 0.28;
+    params.waveShape = 0.001;
+    params.minLinePx = 0.75;
+    params.passes = 1;
+    params.passOffset = 1.5708;
+    params.passAngle = 0;
+    params.passShift = 0;
+    params.amp1 = 0.05;
+    params.freq1 = 11;
+    params.phase1 = 0;
+    params.amp2 = 0.016;
+    params.freq2 = 22;
+    params.phase2 = 0;
+    // Silver glass:
+    params.metal = 0;
+    params.relief = 0.5;
+    params.flank = 1.5;
+    params.cavity = 0.5;
+    params.anisotropy = 0.5;
+    params.shininess = 100;
+    params.specStrength = 0.7;
+    params.iridescence = 0;
+    params.glint = 0.3;
+    params.enamel = 0;
+    params.envStrength = 0.5;
+    params.envWarmth = 0;
+    params.keyStrength = 1;
+    params.lightHue = 0.1;
+    params.lightSat = 0;
+    params.lightHeight = 0.45;
+    params.exposure = 0.95;
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  pane.addButton({ title: "Ref [2,0] Lattice" }).on("click", () => {
+    params.mode = 0;
+    params.shaded = 0;
+    params.invert = 0;
+    params.density = 72;
+    params.cutWidth = 0.18;
+    params.cutterMode = 1;
+    params.offset = 0.015;
+    params.twist = 0.4;
+    params.ampTaper = 0.14;
+    params.waveShape = 0.001;
+    params.minLinePx = 0.75;
+    params.passes = 2;
+    params.passOffset = 0;
+    params.passAngle = 0.262; // half a lobe of freq12 -> second family bisects the first
+    params.passShift = 0.0069; // ~half pitch, radial interleave for the crossing net
+    params.amp1 = 0.05;
+    params.freq1 = 12;
+    params.phase1 = 0;
+    params.amp2 = 0;
+    params.freq2 = 12;
+    params.phase2 = 0;
+    // Blue glass (enamel over silver):
+    params.metal = 0;
+    params.relief = 0.5;
+    params.flank = 1.5;
+    params.cavity = 0.5;
+    params.anisotropy = 0.4;
+    params.shininess = 90;
+    params.specStrength = 0.7;
+    params.iridescence = 0;
+    params.glint = 0.3;
+    params.enamel = 0.7;
+    params.enamelHue = 0.6;
+    params.enamelDepth = 1.6;
+    params.clearcoat = 0.6;
+    params.envStrength = 0.5;
+    params.envWarmth = -0.3;
+    params.keyStrength = 1;
+    params.lightHue = 0.6;
+    params.lightSat = 0;
+    params.lightHeight = 0.5;
+    params.exposure = 0.9;
+    pane.refresh();
+    engine.markDirty();
+  });
+
+  pane.addButton({ title: "Ref [1,1] Spiral" }).on("click", () => {
+    params.mode = 0;
+    params.shaded = 0;
+    params.invert = 0;
+    params.density = 96;
+    params.cutWidth = 0.16;
+    params.cutterMode = 1;
+    params.offset = 0.03;
+    params.twist = 0.85;
+    params.ampTaper = 0.26;
+    params.waveShape = 0.001;
+    params.minLinePx = 0.75;
+    params.passes = 1;
+    params.passOffset = 1.5708;
+    params.passAngle = 0;
+    params.passShift = 0;
+    params.amp1 = 0.042;
+    params.freq1 = 16;
+    params.phase1 = 0;
+    params.amp2 = 0.012;
+    params.freq2 = 32;
+    params.phase2 = 0;
+    // Green glass (enamel over silver):
+    params.metal = 0;
+    params.relief = 0.45;
+    params.flank = 1.5;
+    params.cavity = 0.5;
+    params.anisotropy = 0.4;
+    params.shininess = 90;
+    params.specStrength = 0.7;
+    params.iridescence = 0;
+    params.glint = 0.3;
+    params.enamel = 0.6;
+    params.enamelHue = 0.35;
+    params.enamelDepth = 1.4;
+    params.clearcoat = 0.6;
+    params.envStrength = 0.5;
+    params.envWarmth = 0;
+    params.keyStrength = 1;
+    params.lightHue = 0.35;
+    params.lightSat = 0;
+    params.lightHeight = 0.5;
+    params.exposure = 0.9;
     pane.refresh();
     engine.markDirty();
   });

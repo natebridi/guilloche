@@ -52,6 +52,13 @@ job is faithful implementation.
   spiraling the lobes.
 - **Offset** — subtracted from coord before displacement; everything at
   coord < 0 is masked out (empty center in radial, empty top in linear).
+  The inner mask (`inner`, in `lineMask` and the lit loop) tests the FIELD
+  `f`, not raw `coord` (Task 6.9) — so the boundary follows the first cut's
+  wavy shape instead of being a perfect circle/straight edge. Line centers
+  sit at `fract(density·f) - 0.5` (no `+0.5`), i.e. half-integer multiples of
+  the pitch, so the first line is half a pitch inside the boundary and never
+  sits exactly on it (which used to cut a line in half lengthwise into a
+  persistent ring).
 - **cutWidth** — line width as a fraction of the local pitch (0..1]; replaced
   the old fixed-px `lineWidth`. **minLinePx** is a legibility floor (in px, via
   screen-space `fwidth`) so thin cuts never fully disappear.
@@ -79,12 +86,15 @@ job is faithful implementation.
   screen-space AA band at the cut EDGE (`halfEff ± aaF`), not a fraction of
   `qWin` — blending across `qWin` instead hugged every groove with a dark
   outline, worst at low `cutWidth` (fixed in Task 6.5b).
-- **metal** (Task 6) — 0 silver / 1 gold / 2 ink. Silver/gold share the lit
-  heightfield pipeline (differ only in `base`/`specTint`) and end in Reinhard
-  tonemap + gamma (`exposure`). Ink is a hard branch to the flat Task 2 path
-  with its own plate/stroke colors, skipping lighting and tonemap entirely —
-  checked before `shaded`, so switching to Ink always shows flat paper
-  regardless of the Flat/Shaded toggle.
+- **metal** (Task 6) — 0 silver / 1 gold. Both share the lit heightfield
+  pipeline (differ only in `base`/`specTint`) and end in Reinhard tonemap +
+  gamma (`exposure`). (The former `2 = ink` material was removed as redundant
+  with flat mode — see **invert**/**flatHue**/**flatSat** below.)
+- **invert** / **flatHue** / **flatSat** — flat-mode (`shaded < 0.5`) color
+  controls. The lighter of the two elements is tinted `mix(near-white,
+  hue2rgb(flatHue), flatSat)`; `invert` swaps which element is light, so
+  `invert = 1` gives dark lines on a light (paper) plate — this is what
+  replaced the deleted ink material. All three are inert in the lit path.
 - **u_mouse** — key light direction source, set via `engine.setPointer(x, y)`
   in the same centered/normalized coordinate space as `p`. Driven by
   `pointermove` on desktop, or DeviceOrientation gamma/beta (clamped ±30°) on
@@ -119,34 +129,81 @@ job is faithful implementation.
   it's mandatory, not optional: drop it and lit-mode groove shading in the
   taper zone visibly disagrees with the flat mask's line positions under
   raking light. `0` disables the effect (byte-identical to pre-Task-6.6b).
+  two-regime: strength ramp below the fold-safe floor 1.5·(amp1+amp2), radius above; the regimes meet continuously and both respect the fold bound.
   **taperR** (Task 6.6c) = `max(u_ampTaper, 1.5*(amp1+amp2))` in both
   functions — the raw `u_ampTaper` alone let the envelope's slope (1/taperR)
   exceed the field's own slope when `(amp1+amp2)/ampTaper` approached 1,
   folding lines into a dark needle ring at the taper boundary. The `< 1e-5`
   off-switch still checks `u_ampTaper` itself, so `ampTaper: 0` stays exactly
-  off regardless of amplitude.
-- **iridescence** / **spectralPitch** / **spectralSat** (Task 6.7) —
-  diffraction-grating fringes gated by `anisoWin` (grooves only; land and
-  ink are untouched). `spectralColor(x)` maps a grating-order coordinate
-  `x = spectralPitch·cGrating/m` (m = 1..3 harmonics, `cGrating` from
-  `(L+V)·B` where `B` is the groove-periodicity direction) to a blue→green→
-  red fan, windowed per-harmonic and summed. Its visibility depends on
-  `anisoWin`/`spec` like any other groove-local term — verified correct via
-  the exact math (Node-checked) and by temporarily widening `envSample`'s
-  strip1 window to confirm color pipelines, not just eyeballing the default
-  scene. **envWarmth** tints `envSample`'s `strip1` term only (`stripTint`,
-  Task 6.7) — real but narrow-banded (only visible where the reflection
-  vector's `R.y` lands in strip1's 0.6–0.95 range), so it can look subtle at
-  typical viewing/lighting params despite being fully wired.
-- **grain** / **grainScale** (Task 6.8) — per-pixel `hash21`-based normal
-  perturbation added to `gradH_world` after the pass winner is chosen (so it
-  reads as a material property, not a per-groove one); static in screen
-  space, so it flares/extinguishes with the light instead of crawling.
-  **wobble** perturbs `phaseField` itself (`vnoise(p*6.0)`), so flat and lit
-  renderers see the identical wavered line — its gradient contribution is
-  deliberately ignored (negligible at this amplitude). **filmGrain** is the
-  literal last op before `outColor`, added post-tonemap/gamma so it reads as
-  a photographic layer over the whole frame, background included.
+  off regardless of amplitude. The raw hyperbolic envelope is then lifted
+  affinely into `[F0, 1]` (`F0 = 0.25`): `env = F0 + (1-F0)*envRaw`, `envD =
+  (1-F0)*envDRaw`. This keeps the innermost cuts at a floor of amplitude
+  instead of collapsing them to a needle at `coord = 0` (the first cutline was
+  over-tapered at high `ampTaper`); scaling `envD` down by `(1-F0)` only ever
+  helps the fold bound. `F0` is the knob for how much amplitude the center
+  retains (0 = old fully-collapsing behavior).
+- **iridescence** / **spectralPitch** / **spectralSat** (Task 6.7, banded
+  Task 6.12) — diffraction-grating fringes gated by `anisoWin` (grooves
+  only; land and the flat path are untouched). `spectralColor(x)` maps a grating-order
+  coordinate to a blue→green→red fan; `x` now also sweeps across the cut
+  width via `(qWin - 0.5) * 0.35` (Task 6.12), and is modulated by
+  **fringes** — a `cos(TAU·x·fringes)` band term — so each groove shows
+  discrete interference stripes instead of one flat fill; `fringes: 0`
+  disables the modulation (`band = 1.0`, Task 6.7-style smooth fan). Its
+  visibility depends on `anisoWin`/`spec` like any other groove-local term —
+  verified correct via the exact math (Node-checked) and by temporarily
+  widening `envSample`'s strip1 window to confirm color pipelines, not just
+  eyeballing the default scene. **envWarmth** tints `envSample`'s `strip1`
+  term only (`stripTint`, Task 6.7) — real but narrow-banded (only visible
+  where the reflection vector's `R.y` lands in strip1's 0.6–0.95 range), so
+  it can look subtle at typical viewing/lighting params despite being fully
+  wired. **glint** (Task 6.12) is independent of `iridescence` — a separate
+  `if (u_glint > 0.0)` block adding rare, sharp (`pow(tw, 24.0)`) sparkle
+  pinpoints at cut edges (`anisoWin·(1-anisoWin)`) and ridge crests
+  (`dWin` near 0.5, the winning pass's `d` — tracked alongside `qWin` in the
+  pass loop). The sparkle mask is purely a function of screen position
+  (`hash21`, no time term), so it's static while the pointer is idle and
+  only pops in/out via the `spec` multiplier as light moves.
+- **grain** / **grainScale** (Task 6.8, reworked Task 6.11) — groove-following
+  tool-mark grain, gated `if (u_grain > 0.0)`. Inside cuts: `vnoise` sampled
+  in groove-aligned coords (`Bw`/`Tw` from `gradFieldWorldWin`, stretched
+  1:6.7 along the cut) perturbs `gradH_world` ACROSS the groove, scaled by
+  local slope and gated toward `anisoWin` — reads as tool marks running
+  along the cut, not uniform sparkle. On land: the original Task 6.8
+  per-pixel `hash21` perturbation survives at 1/5 strength (`0.012` vs
+  `0.06`) and is gated by `(1.0 - anisoWin)`, so it fades exactly where the
+  groove streak fades in. **filmGrain** is the literal last op before `outColor`,
+  added post-tonemap/gamma so it reads as a photographic layer over the
+  whole frame, background included.
+- **Gradient clamp** (Task 6.10) — `gradH_world` is capped to length 2.5
+  (direction preserved) right after grain perturbation, before `N` is built.
+  At `flank: 1` the wall slope is constant to the cut edge and scales with
+  `relief`/`cutWidth`, so extreme edge normals used to reflect into
+  `envSample`'s dark horizon band as a 1px black rim; verified the halo is
+  real (temporarily removed the clamp, reproduced it) and that the clamp
+  never engages at low relief (`gLen` stays near 0 there, confirmed by
+  temporarily visualizing it) — only the r=0 pole singularity exceeds it,
+  which is pre-existing and unrelated.
+- **lightCol** (Task 6.13) — `mix(vec3(1.0), hue2rgb(lightHue), lightSat) *
+  keyStrength`, computed once and applied ONLY to the direct key-light
+  terms: the diffuse term (`0.15 * diff * lightCol`) and the key specular
+  term (`specTint * spec * lightCol`) in the main color assembly. `env`/
+  `envStrength`'s reflection contribution and the spectral/glint blocks'
+  `spec`-as-intensity-gate reads are deliberately left unscaled — `spec` in
+  those two blocks is a brightness weight on an already-colored effect, not
+  a literal light-color contribution, so tinting the key light doesn't shift
+  env reflections or fringe/glint hue. `keyStrength: 0` zeroes both direct
+  terms, leaving only ambient (`0.03`) + env.
+- **enamel** / **enamelHue** / **enamelDepth** / **clearcoat** (Task 6.13) —
+  a translucent coat blended in AFTER spectral/glints, BEFORE exposure/ACES,
+  metal paths only (flat mode untouched). `trans = exp(-absorb * path)` where
+  `path = 1/max(NdotV, 0.35)` (Beer-Lambert-style absorption that deepens at
+  grazing angles) tints the metal color seen through the coat; a `cos`-based
+  `film` term adds a mild thin-film hue drift. The clear coat's specular/env
+  terms use a FLAT normal (`Nc = vec3(0,0,1)`, not the relief normal) since
+  the enamel's top surface fills the grooves smooth — this is what reads as
+  one glossy highlight floating over the groove-following metal highlights
+  beneath, not following them.
 
 ## Status
 
@@ -165,8 +222,8 @@ job is faithful implementation.
   tonemap — `metal`/`envStrength`/`lightHeight`/`exposure`; `u_mouse` set via
   `engine.setPointer()` from pointermove or DeviceOrientation gamma/beta;
   `envSample()` studio strips; silver/gold go through the full lit+env+
-  tonemap pipeline, ink short-circuits to the flat Task 2 path ignoring
-  lighting),
+  tonemap pipeline (a third `ink` metal short-circuiting to the flat path was
+  added here and later removed as redundant with flat mode),
   TASK 6.5 (metal contrast rework — narrower/hotter `envSample()` strips with
   a dark horizon band; metal color assembly now Fresnel- and `cavity`-
   weighted (`cavity` deepens valleys via `qWin` without touching crests,
@@ -192,11 +249,38 @@ job is faithful implementation.
   effective taper radius by `1.5*(amp1+amp2)` in both `phaseField` and
   `phaseGradient`, so the envelope's slope can no longer exceed the field's
   own slope and fold lines into a needle ring),
-  TASK 6.8 (analog texture — `grain`/`grainScale`/`wobble`/`filmGrain` in a
+  TASK 6.8 (analog texture — `grain`/`grainScale`/`filmGrain` in a
   new "Texture" panel folder; `hash21`/`vnoise` noise primitives; surface
-  grain perturbs `gradH_world` post-winner, cut wobble perturbs `phaseField`
-  so flat/shaded agree, film grain is the literal last op before `outColor`)
-  — all implemented, pending review.
+  grain perturbs `gradH_world` post-winner, film grain is the literal last
+  op before `outColor`; the `wobble` phase-field perturbation added here was
+  later removed as ineffective),
+  TASK 6.9 (reworked the inner boundary — line centers shifted half a pitch
+  so one never sits exactly on the boundary, and the inner mask now tests
+  the field `f` instead of raw `coord`, so the opening follows the first
+  cut's wavy shape instead of being a perfect circle/straight edge; fixes
+  the persistent half-cut ring),
+  TASK 6.10 (fixed the black-pixel halo at cut edges — `gradH_world` is
+  clamped to length 2.5 after grain perturbation, before `N`, so extreme
+  edge normals at `flank: 1`/high `relief` stop reflecting into the
+  environment's dark horizon band; low-relief renders are untouched since
+  the clamp doesn't engage there),
+  TASK 6.11 (groove-following tool-mark grain — replaced the uniform
+  per-pixel grain with `vnoise` sampled in groove-aligned coordinates,
+  perturbing `gradH_world` across the cut and scaled by local slope/
+  `anisoWin`, plus a faint `(1-anisoWin)`-gated residual on flat land; the
+  Task 6.10 clamp still runs immediately after),
+  TASK 6.12 (jewel-like spectral term — `fringes` adds a `cos`-banded
+  interference modulation across each cut's grating coordinate (swept by
+  `qWin`), and a new independent `glint` block adds sharp, static-in-screen-
+  space sparkle pinpoints at cut edges and ridge crests, gated by `spec` so
+  they pop with the light rather than shimmering; both remain metal-paths-
+  only, before exposure/ACES),
+  TASK 6.13 (translucent enamel + key-light color — `enamel`/`enamelHue`/
+  `enamelDepth`/`clearcoat` add a Beer-Lambert-tinted coat with a flat-normal
+  clear-coat highlight, applied after spectral/glints; `keyStrength`/
+  `lightHue`/`lightSat` tint only the direct diffuse+specular terms via
+  `lightCol`, leaving env reflections and spectral/glint hue untouched) —
+  all implemented, pending review.
 - NEXT: TASK 7 (typed param schema + URL state).
 - Remaining: 7 typed param schema + URL state · 8 React editor · 9 presets +
   share polish.

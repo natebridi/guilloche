@@ -1,6 +1,9 @@
 export const params = {
   mode: 0, // 0 radial, 1 linear
   shaded: 1, // 0 = flat engraving, 1 = lit relief
+  invert: 0, // flat mode: 0 = light lines on dark, 1 = dark lines on light
+  flatHue: 0.5, // flat mode: tint hue of the light element [0..1]
+  flatSat: 0, // flat mode: tint saturation, 0 = neutral grey [0..1]
   density: 28, // line families per unit phase
   cutWidth: 0.35, // cut width as fraction of line pitch, (0..1], 1 = abutting
   cutterMode: 1, // 0 = feed-relative (constant field width), 1 = fixed cutter
@@ -13,12 +16,21 @@ export const params = {
   anisotropy: 0.8, // blend isotropic->anisotropic [0..1]
   shininess: 80, // spec exponent [8..256]
   specStrength: 1.0, // [0..3]
-  metal: 0, // 0 silver, 1 gold, 2 ink-on-paper
+  metal: 0, // 0 silver, 1 gold
   iridescence: 0, // spectral term blend [0..1]
   spectralPitch: 1.6, // fan width control [0.5..8]
   spectralSat: 0.85, // saturation of the spectral term [0..1]
+  fringes: 3, // interference band count within the fan [0..8]
+  glint: 0.5, // edge/crest sparkle amount [0..1]
+  enamel: 0, // enamel layer blend [0..1]
+  enamelHue: 0.6, // dye hue [0..1]
+  enamelDepth: 1.5, // absorption depth [0.2..4]
+  clearcoat: 0.6, // gloss of the enamel top surface [0..1]
   envStrength: 0.7,
   envWarmth: 0, // -1 cool .. 0 neutral .. +1 warm
+  keyStrength: 1, // key light intensity [0..2]
+  lightHue: 0.1, // key light hue [0..1]
+  lightSat: 0, // key light saturation, 0 = white [0..1]
   lightHeight: 0.55,
   exposure: 1.0,
   offset: 0, // shifts pattern outward from center (radial) / down (linear)
@@ -35,6 +47,5 @@ export const params = {
   phase2: 0,
   grain: 0, // surface sparkle amount [0..1]
   grainScale: 600, // grit size [50..2000]
-  wobble: 0, // hand-turned line waver [0..1]
   filmGrain: 0, // photographic post noise [0..0.15]
 };
