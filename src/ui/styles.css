@@ -1,0 +1,328 @@
+:root {
+  --bg: #0e0f12;
+  --rail: #15171c;
+  --hair: #2a2d35;
+  --text: #cdd0d8;
+  --muted: #787d89;
+  --accent: #c8a24b;
+  --sans: "Instrument Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ---- Layout ---- */
+/* The remapped Jig tokens live here rather than on :root because Jig
+   defines them under :root[data-theme="dark"], which outranks a bare :root.
+   Setting them on an ancestor of the controls sidesteps the specificity race
+   entirely — they simply inherit. */
+.app {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Empty state when the engine can't start (no WebGL2 context). */
+.stage-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  padding: 24px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* iOS-only: device orientation needs an explicit user gesture to unlock.
+   Placement only — the button itself is a Jig Button. */
+.gyro-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  border-radius: 999px;
+}
+
+.stage-caption {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- Preview frame ---- */
+.frame-viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.frame {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+/* 3D tilt: smooth the follow while moving and the spring-back on leave. */
+.frame-tilt {
+  transform-origin: center center;
+  transition: transform 0.16s ease-out;
+  will-change: transform;
+}
+.frame-full {
+  width: 100%;
+  height: 100%;
+}
+.frame-card {
+  width: 500px;
+  aspect-ratio: 22 / 14;
+  max-width: 88%;
+  max-height: 84%;
+  border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+}
+.frame-circle {
+  width: 460px;
+  aspect-ratio: 1;
+  max-width: 84%;
+  max-height: 84%;
+  border-radius: 50%;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+}
+
+.frame-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(21, 23, 28, 0.82);
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  backdrop-filter: blur(6px);
+}
+
+.rail {
+  flex: 0 0 320px;
+  width: 320px;
+  height: 100%;
+  background: var(--rail);
+  border-left: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---- Group section ---- */
+.group {
+  border-top: 1px solid var(--hair);
+  padding: 14px 16px;
+}
+.group:first-child {
+  border-top: none;
+}
+
+.group-heading {
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---- Param row ---- */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  margin: 8px 0;
+}
+
+/* Enum rows only — a slider's label comes from Jig's own `label` prop. */
+.row-label {
+  flex: 0 0 84px;
+  width: 84px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Number + unit. The unit sits in the muted colour so the digits stay the thing
+   the eye picks up scanning the column; the width fits the longest readout
+   ("-100%", "0.75px", "1.00x"). */
+.row-value {
+  flex: 0 0 54px;
+  width: 54px;
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.row-unit {
+  font-style: normal;
+  color: var(--muted);
+}
+
+/* ---- Slider / stepper rows ----
+   Jig's Slider stacks its label above the track (it is a column flexbox); the
+   rail wants label · track · value on one 24px line. Base UI gives the label
+   an id (it names the control via aria-labelledby) and gives the track row
+   none — which is what tells the two children apart here without depending on
+   Jig's generated class names. */
+.row-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.row-slider > [id] {
+  flex: 0 0 84px;
+  width: 84px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+.row-slider > :not([id]) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- Segmented (enum) ----
+   ToggleButtonGroup ships no visual treatment of its own by design; spacing is
+   explicitly the caller's job, so this is the whole of it. */
+.segmented {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+}
+.segmented > button {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Rail actions ---- */
+.rail-footer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--hair);
+}
+.rail-footer > button {
+  flex: 1 1 0;
+}
+
+/* ---- Preset pills ---- */
+.preset-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--rail);
+  border-bottom: 1px solid var(--hair);
+}
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.share-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.share-row > button {
+  flex: 1 1 0;
+}
+.share-note {
+  margin: 8px 0 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---- Responsive: stack below 760px, whole page scrolls ---- */
+@media (max-width: 760px) {
+  html,
+  body,
+  #root {
+    height: auto;
+  }
+  body {
+    overflow: auto;
+  }
+  .app {
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+  }
+  .stage {
+    flex: 0 0 auto;
+    height: 55vh;
+  }
+  .rail {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+    border-left: none;
+    border-top: 1px solid var(--hair);
+  }
+  .rail-scroll {
+    overflow-y: visible;
+  }
+}

@@ -1,19 +1,55 @@
 {
-  "name": "guilloche",
-  "private": true,
-  "version": "0.0.1",
+  "name": "@natebridi/guilloche",
+  "version": "0.1.0",
+  "description": "Procedural guilloché (rose-engine) patterns as a WebGL2 custom element.",
+  "license": "MIT",
+  "author": "Nate Bridi",
   "type": "module",
+  "keywords": [
+    "guilloche",
+    "rose-engine",
+    "webgl2",
+    "shader",
+    "generative",
+    "custom-element",
+    "web-component"
+  ],
+  "sideEffects": [
+    "./dist-embed/guilloche-element.js"
+  ],
+  "types": "./dist-embed/types/index.d.ts",
+  "module": "./dist-embed/guilloche.js",
+  "exports": {
+    ".": {
+      "types": "./dist-embed/types/index.d.ts",
+      "default": "./dist-embed/guilloche.js"
+    },
+    "./element": {
+      "types": "./dist-embed/types/embed.d.ts",
+      "default": "./dist-embed/guilloche-element.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist-embed",
+    "README.md"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build:embed": "vite build --config vite.config.embed.ts && tsc -p tsconfig.embed.json",
+    "build:all": "npm run build && npm run build:embed",
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build:embed"
   },
   "devDependencies": {
-    "@tweakpane/core": "^2.0.5",
+    "@jig-ui/react": "file:../jig/packages/components",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.2",
     "vite": "^5.4.10"
-  },
-  "dependencies": {
-    "tweakpane": "^4.0.5"
   }
 }

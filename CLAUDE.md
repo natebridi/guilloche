@@ -19,6 +19,186 @@ job is faithful implementation.
 - When asked to `Revise: <criterion>`, fix that criterion only.
 - Never mark a task "reviewed" or "approved" in Status — that designation comes from Nate after external review. Mark completed tasks as "implemented, pending review."
 
+## Packaging (post-TASK-9, Nate-initiated)
+
+The repo now builds TWO artifacts from one source tree:
+
+- **The editor app** (`npm run build` → `dist/`) — React, deployed as a static
+  site. Not published to npm.
+- **The embeddable package** (`npm run build:embed` → `dist-embed/`) — the
+  `<guilloche-pattern>` custom element plus the programmatic API. ESM only
+  (every WebGL2-capable browser supports modules, so an IIFE build would be
+  dead weight). ~13.6 kB gzipped, self-contained.
+
+Key structural rule this introduced: **`src/engine/` must never import from
+`src/ui/`.** The embed bundle reaches into engine/ only, so anything the
+custom element needs has to live at or below that layer — this is why
+`pointerInput.ts` moved from `src/ui/` to `src/engine/`.
+
+`src/engine/mount.ts` is the shared spine: engine construction + rAF loop +
+ResizeObserver + DPR watching + input wiring, with no framework. Both
+`<Stage>` (React) and `<guilloche-pattern>` are thin shells over it. Behavior
+that belongs to one shell (the app's CSS tilt, the caption) stays in that
+shell. **Fix rendering/lifecycle bugs in `mount.ts`, not in either shell.**
+
+Embed-specific defaults differ from the app's on purpose: element-scoped
+pointer (not window), gyro off (the iOS permission prompt is hostile on
+someone else's page), lazy GL context via IntersectionObserver, and a real
+`engine.destroy()` that calls `loseContext()` — browsers cap live contexts
+per page.
+
+`src/element.ts` builds its class inside a factory rather than at module
+scope, because `class X extends HTMLElement` evaluates `HTMLElement` at
+definition time and throws under SSR. Guarding only the `customElements.define`
+call is NOT sufficient — this was caught by importing the built bundle in Node.
+
+**Device orientation is a state machine (`GyroState`), not a boolean**, because
+it fails silently in two different ways that are otherwise indistinguishable
+from "the feature is broken":
+
+- It requires a SECURE CONTEXT. On `http://<lan-ip>` iOS does not expose
+  `DeviceOrientationEvent.requestPermission` at all, so the naive code path
+  binds a `deviceorientation` listener that never fires and reports success.
+  `pointerInput.ts` checks `window.isSecureContext` FIRST for this reason;
+  don't remove it. `localhost` is secure, a LAN IP over http is not — so this
+  reproduces only when testing on a phone.
+- iOS grants permission only from a REAL user gesture. The earlier
+  implementation used an ambient `window` `pointerdown` listener with
+  `{ once: true }`; on touch, `pointerdown` also fires when a scroll begins,
+  which iOS does not count as user activation — so the single attempt was
+  routinely burned by a scroll with no retry. Permission is now requested only
+  from an explicit button click (`requestGyro()`), exposed as an "Enable
+  motion" affordance in both shells.
+
+Testing gyro therefore needs an HTTPS tunnel or a deployed preview; a LAN dev
+server cannot work regardless of the code.
+
+**The repo is a Vite multi-page app.** `vite.config.ts` declares two entries:
+`index.html` (editor) and `demo/embed.html` (the embed demo/docs page). The
+demo was previously a plain static HTML file, which meant Vite served it
+verbatim and bare specifiers could not resolve — making it a real entry is what
+allows it to import from node_modules. Both the demo and the editor use the
+`@jig-ui/react` design system.
+
+**Jig may be imported from `src/ui/`, and NOWHERE else in `src/`.** The editor
+is a static build that is never published, so a devDependency is the right
+home for Jig — but the embeddable package is built from the same tree, and
+anything Jig touches below `src/ui/` would ship to consumers who never asked
+for a React design system. The existing `src/engine/` → no-`src/ui/` rule is
+what keeps this true: verify it after any dependency change with
+`npm run build:embed && grep -l jig dist-embed/*.js` (which must find nothing).
+
+The editor still owns its own `src/ui/styles.css` — the rail's dark chrome,
+the compact param rows, the gold accent. What that file no longer contains is
+control *skins*: sliders, steppers, buttons and segmented pickers are Jig
+components, and styles.css only places them. Two hooks make that work, both
+documented at their site in the CSS:
+
+- `index.html` carries `data-theme="dark"`, which is how Jig picks its token
+  set; the editor is dark-only.
+- Jig ships its CSS in `@layer jig.*`, so the editor's unlayered rules always
+  win — no specificity fights. Brand colour is restated by remapping a handful
+  of Jig's semantic tokens on `.app` (they inherit down to every control)
+  rather than by overriding generated class names, which are not stable API.
+  Delete that block and the app returns to stock Jig.
+
+Jig's `Slider` covers BOTH former controls: `steppers` flanks the track with
+−/+ buttons, which is exactly the hand-rolled integer stepper it replaced. Its
+`label` prop is the only route to an accessible name (there is no `aria-label`
+prop), so it is always passed even though the rail lays the label out itself.
+One consequence worth knowing: Jig snaps with `round((v-min)/step)*step+min`,
+which lands on values like `0.30000000000000004` where the native range input
+returned an exact decimal — `controls.tsx` re-quantizes, because `urlState.
+encode()` writes numbers verbatim and compares them against `default`.
+
+The demo imports the element from SOURCE (`../src/embed`), not from
+`dist-embed/`, so it has HMR and needs no prior `build:embed`. JSX typing for
+`<guilloche-pattern>` lives in `demo/jsx.d.ts` rather than `src/element.ts`,
+deliberately: the package is framework-agnostic and must not push a global
+React JSX augmentation onto consumers.
+
+The URL format doubles as the embed config format: `params="v1&pr=net"` on the
+element runs through the same `decode()` as a share link. `src/embedSnippet.ts`
+owns the CDN/version-pinning policy (pin to major, or `0.x` for 0-versions;
+never `@latest`).
+
+## Display units (UI-only, post-TASK-9)
+
+**SCHEMA is in ENGINE units and always will be.** Uniforms, `urlState`,
+`presets.ts` and `randomize.ts` all read it directly and none of them know the
+display layer exists. What the user reads is a pure UI overlay: an optional
+`display: DisplaySpec` on each `ParamDef`, compiled once by `compileDisplay()`
+into a `Display` that `ParamRow` converts through on the way in and out. The
+slider itself runs in DISPLAY units — a percent slider genuinely has 100 stops
+— and `toRaw()` clamps and rounds on the way back.
+
+This exists because the rail was reading as a dozen unrelated scales: bare
+radians beside thousandths beside a specular exponent. Five units now, each a
+rule rather than a preference, so there is no judgment call about where a new
+param goes:
+
+- `%` — anything bounded and amount-like; integer steps, no decimal point ever.
+  Two spec kinds produce it: `percent` normalizes the param's own `[min,max]`
+  onto 0–100 (for values whose absolute magnitude means nothing outside the
+  shader), `fraction` is x100 and nothing more (for values that already ARE a
+  fraction, which is what keeps Cut Width's floor honest at 5% instead of
+  flattening it to 0%).
+- `°` — every angle (`radians`), every hue (`turns`, since `hue2rgb` takes
+  turns so x360 is exact), and the key light's `elevation`.
+- `×` — true gains only, where 1.00 is neutral. Deliberately NOT percent: 300%
+  would read as past-the-maximum, which is the opposite of what it means.
+- `px` — Min Line Px alone, because it really is a screen measurement. The
+  visible unit is what earns it the right to a decimal.
+- (bare) — counts of a real thing: lobes, passes, hairlines, fringes, and
+  Twist, which is turns of phase per unit coord. Omitting `display` means this.
+
+Three maps are deliberately NON-linear, and all three are worth keeping:
+
+- **`expo` (Shininess)** — a specular exponent over 8–256 spends four fifths of
+  a linear slider on changes nobody can see. Log-spaced instead.
+- **`elevation` (Light Height)** — `lAz` is normalized to unit length before
+  the key light is built, so this param IS the tangent of the light's elevation
+  above the plate. It reads as `22°`, not `0.40`. The display ends round INWARD
+  (`ceil` the min, `floor` the max) so neither end is a value the raw range
+  excludes.
+- **`expoZero` (Amp Taper)** — a param's useful range is not always its raw
+  range. `taperEnv()` has two regimes split at `R0 = 1.5*(amp1 + amp2)`: below
+  it the slider is taper STRENGTH, above it taper RADIUS. At default
+  amplitudes R0 is `0.12` of a `0.4` span, so a linear slider gave the entire
+  strength ramp its bottom 30% and spent the rest on radius. With `k: 5` the
+  ramp now occupies 0–76% of the travel and the centre envelope moves evenly
+  (1.00 → 0.81 at half travel → 0.25 at 76%).
+
+  `expoZero` is a separate kind from `expo` because `expo` is `log(v/min)` and
+  cannot represent zero — and Amp Taper's zero is load-bearing, since the
+  shader's off-switch tests `u_ampTaper < 1e-5`. `expoZero` anchors display 0
+  on raw `min` exactly; 1% is `0.000139`, which reads as ON. Its `k` is the
+  steepness, defined so the raw value at the slider's midpoint is
+  `span / (e^(k/2) + 1)` — k = 5 puts the midpoint at ~7.6% of the range.
+  It uses `expm1`/`log1p` rather than `exp`/`log` to hold precision at the
+  shallow bottom of the curve.
+
+The Shininess and Light Height defaults are consequently the only two that
+don't sit exactly on a display stop (80 shows 66%, 0.4 shows 22°). Harmless:
+it only means dragging to the shown value lands a hair off the stored default.
+Amp Taper's default of 0 is exact. `randomize.ts` samples in raw units and is
+unaffected — it touches none of the three.
+
+`quantize()` rounds a transform's output to one part in a million of the
+param's range. That is fine enough to be invisible and coarse enough to keep
+share links readable, and it is what makes 90° round-trip to exactly
+`1.570796` — which is why the angle maxima were retyped from their truncated
+forms (`6.283` → `6.283185`, `1.5708` → `1.570796`), so that 360° and 90° are
+actually reachable. Old links carrying the truncated values still decode and
+simply clamp.
+
+`waveShape`'s min/default moved from `0.001` to `0` in the same pass — the
+shader already floors it with `max(u_waveShape, 1e-3)`, and the old value put
+the DEFAULT exactly on the MINIMUM, which read as a broken slider.
+
+**Adding a param:** pick the unit by the rules above and add the spec. Only
+reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
+
 ## Architecture (fixed decisions)
 
 - The pattern is a scalar field evaluated per-fragment — never geometry,
@@ -45,13 +225,36 @@ job is faithful implementation.
 - **Rosette** — primary sinusoidal displacement (amp1/freq1/phase1).
 - **Harmonic** — second sinusoid summed into the same cut (amp2/freq2/phase2).
   Produces texture, never crossings.
-- **Passes** — the same cut repeated with the rosette phase advanced by
-  `passOffset` per pass. All visible crossings/lattices come from passes.
-  Combine rule: deepest cut wins (max for line masks, min for heightfield).
+- **Passes** — the same cut repeated, differentiated by `passAngle` (field
+  rotation) and/or `passShift` (coord advance) per pass. All visible
+  crossings/lattices come from passes. Combine rule: deepest cut wins (max for
+  line masks, min for heightfield). NOTE: with both at 0 the passes are
+  identical, so `passes` alone changes nothing — one of the two must be set.
+  (A third knob, `passOffset`, advanced the rosette PHASE per pass; it was
+  removed because in radial it is exactly reproducible as `passAngle` — see
+  below — and in linear it earned too little to keep.)
 - **Twist** — phase advances continuously with coord (`+ twist·coord·TAU`),
-  spiraling the lobes.
-- **Offset** — subtracted from coord before displacement; everything at
-  coord < 0 is masked out (empty center in radial, empty top in linear).
+  spiraling the lobes. **twistWaveAmp** / **twistWaveFreq** / **twistWavePhase**
+  add a radial phase *wave* on top of the linear twist (`+ twistWaveAmp·
+  sin(twistWaveFreq·coord·TAU + twistWavePhase)`), so the arms undulate
+  (serpentine/hooked) instead of running as a constant-pitch spiral.
+  `phaseGradient` carries the matching `dTurn = T + twistWaveAmp·(twistWaveFreq·
+  TAU)·cos(...)` local-twist-rate term. `twistWaveAmp = 0` is byte-identical to
+  pure twist. `twistWaveAmp` feeds through LINEARLY (no clamp) — a former
+  fold-safe soft-saturation (`effTwistWaveAmp`, tanh cap at 0.5× the feed) was
+  removed because it throttled the effect too hard for the desired look; the
+  slider is now free to push the wave's radial phase-slope past the feed, which
+  tears/folds lines at high `twistWaveAmp × twistWaveFreq` (an accepted
+  expressive tradeoff, not a bug). `twAmp` is used identically in both
+  `phaseField` and `phaseGradient`, so flat/lit stay consistent.
+- **Offset** — subtracted from coord before displacement; where coord < 0 the
+  inner mask empties the pattern. In RADIAL this is the central hole. In LINEAR
+  the origin is now shifted past the far corner (`coord = 0.5·length(u_res)/
+  min(u_res) + 0.5 − p.y`) so coord ≥ 0 across the whole canvas for ANY pass
+  rotation — the pattern fills the page instead of masking a half-plane at
+  screen centre (the earlier "empty top in linear" behavior). A side effect:
+  in linear, `offset` (range 0.2) can no longer push the boundary on-screen, so
+  it now just translates the pattern's phase rather than creating a top margin.
   The inner mask (`inner`, in `lineMask` and the lit loop) tests the FIELD
   `f`, not raw `coord` (Task 6.9) — so the boundary follows the first cut's
   wavy shape instead of being a perfect circle/straight edge. Line centers
@@ -64,9 +267,25 @@ job is faithful implementation.
   screen-space `fwidth`) so thin cuts never fully disappear.
 - **waveShape** — shapes the rosette/harmonic wave from sine (~0.001) toward
   square/scalloped (higher values) via `tanh`-shaped `waveFn`.
-- **passAngle** / **passShift** — per-pass field rotation / coord advance,
-  applied on top of `passOffset`. Enables crosshatch (angle) and
-  interleaved-density (shift = half pitch) effects passes alone couldn't do.
+- **passAngle** / **passShift** — per-pass field rotation / coord advance, and
+  since the removal of `passOffset` the ONLY things that differentiate a pass.
+  Crosshatch (angle) and interleaved density (shift = half pitch).
+
+  In RADIAL, `passAngle` subsumes the old `passOffset` exactly: `coord` is
+  `length(p)` and so rotation-invariant, and rotating the sample point by `a`
+  shifts the rosette argument by `-freq*a`. `waveFn` is a pure function of
+  `sin(x)` and therefore 2π-periodic, so a per-pass phase advance of `po` is
+  identical to a per-pass rotation of `a = po/freq1` — EXACTLY when `amp2` is 0
+  or `freq1 == freq2`, and only approximately otherwise, since the two rosettes
+  would want different angles. This is how the Net (`π/16`) and Barleycorn
+  (`π/24`) presets were converted with no visual change.
+
+  In LINEAR there is no such equivalence — a rotation there turns the grating
+  into a crosshatch rather than offsetting its phase — which is why Certificate
+  was converted to `passShift` instead. Watch total coverage when doing that:
+  two interleaved passes at `cutWidth: 0.35` cover ~70% of the plate, which
+  makes the CUT the dominant field and visually inverts a flat render. That
+  preset halves `cutWidth` to compensate.
 - **shaded** — 0 = flat engraving (Task 2.5 path, unchanged), 1 = lit V-groove
   heightfield (Task 4). **relief** scales groove depth; **flank** is the facet
   profile exponent (1 = straight V, higher = cusped/rounded shoulders). The
@@ -95,11 +314,24 @@ job is faithful implementation.
   hue2rgb(flatHue), flatSat)`; `invert` swaps which element is light, so
   `invert = 1` gives dark lines on a light (paper) plate — this is what
   replaced the deleted ink material. All three are inert in the lit path.
-- **u_mouse** — key light direction source, set via `engine.setPointer(x, y)`
-  in the same centered/normalized coordinate space as `p`. Driven by
-  `pointermove` on desktop, or DeviceOrientation gamma/beta (clamped ±30°) on
-  devices that report it — whichever fired most recently wins, no explicit
-  mode switch. **lightHeight** is the uniform's synthetic z. **envStrength**
+- **Lighting model** — a single distant key light whose AZIMUTH is aimed by
+  the pointer: `lAz = normalize(u_mouse)` (horizontal part normalized to unit
+  length so position is *direction*, not intensity — no hotspot, no plate
+  tilt, constant elevation), `L = normalize(vec3(lAz, u_lightHeight))`. Moving
+  the pointer relights the grooves and sweeps the turned-finish highlight
+  together (both key off the shared half-vector `H`). Set via
+  `engine.setPointer` from pointermove / DeviceOrientation; defaults upper-
+  right when centered. View is orthographic (`V = (0,0,1)`) — an earlier
+  perspective-`V` reflection gradient was removed because it banded the flat
+  surface and went strange under coloured light, so the flat uncut land's look
+  now comes from the turned **finish** (below); groove walls still catch env
+  reflections through their tilted normals. **lightHeight** is the key light's
+  elevation (z): low = grazing/texture-forward, high (>1) = overhead.
+  **finish** / **finishFreq** (Material folder) add the lathe/turned
+  anisotropic sheen on the uncut land — concentric in Radial, linear brush in
+  Linear — masked out of the cuts by `(1 - anisoWin)`; sharpness follows
+  `shininess`, hairline density follows `finishFreq`, and it fades toward the
+  rim. **envStrength**
   scales the procedural studio environment (`envSample()`, sampled by the
   reflection vector), which is tinted by `specTint` in the color assembly (so
   gold's reflections read warm even where highlights hide the base color).
@@ -164,15 +396,28 @@ job is faithful implementation.
   pass loop). The sparkle mask is purely a function of screen position
   (`hash21`, no time term), so it's static while the pointer is idle and
   only pops in/out via the `spec` multiplier as light moves.
-- **grain** / **grainScale** (Task 6.8, reworked Task 6.11) — groove-following
-  tool-mark grain, gated `if (u_grain > 0.0)`. Inside cuts: `vnoise` sampled
-  in groove-aligned coords (`Bw`/`Tw` from `gradFieldWorldWin`, stretched
-  1:6.7 along the cut) perturbs `gradH_world` ACROSS the groove, scaled by
-  local slope and gated toward `anisoWin` — reads as tool marks running
-  along the cut, not uniform sparkle. On land: the original Task 6.8
-  per-pixel `hash21` perturbation survives at 1/5 strength (`0.012` vs
-  `0.06`) and is gated by `(1.0 - anisoWin)`, so it fades exactly where the
-  groove streak fades in. **filmGrain** is the literal last op before `outColor`,
+- **grain** / **grainScale** (Task 6.8, reworked Task 6.11, FIXED later) —
+  groove-following tool-mark grain, gated `if (u_grain > 0.0)`. Inside cuts:
+  `vnoise` sampled in groove-aligned coords (`Bw`/`Tw` from
+  `gradFieldWorldWin`, stretched 1:6.7 along the cut) perturbs `gradH_world`
+  along `Tw`, scaled by local slope and gated toward `anisoWin` — reads as tool
+  marks running along the cut, not uniform sparkle. On land: the Task 6.8
+  per-pixel `hash21` perturbation, gated by `(1.0 - anisoWin)` so it fades
+  exactly where the groove streak fades in.
+
+  **`Tw`, not `Bw`, and this is the whole ballgame.** As written in Task 6.11
+  the perturbation was `Bw * streak * ...`, and grain was invisible at every
+  setting — the symptom that prompted the fix. A groove's height varies only
+  ACROSS itself, so `gradH_world` is already parallel to `Bw`; adding more `Bw`
+  is collinear and changes the vector's LENGTH but never its direction. The
+  Task 6.10 clamp three lines later then pins that length, erasing the term
+  outright wherever the walls are steep enough to clamp — i.e. wherever grooves
+  read at all. `Tw` is also the physically right component: a tool mark is the
+  cut depth rippling as the work turns under the cutter, so it tilts the
+  surface along the direction of travel. If grain ever goes quiet again, check
+  this axis first. The land term was simultaneously restored from Task 6.11's
+  `0.012` (a ~0.7° normal tilt, below the visibility threshold once the streak
+  term was dead) to `0.05`, roughly the Task 6.8 level. **filmGrain** is the literal last op before `outColor`,
   added post-tonemap/gamma so it reads as a photographic layer over the
   whole frame, background included.
 - **Gradient clamp** (Task 6.10) — `gradH_world` is capped to length 2.5
@@ -194,16 +439,16 @@ job is faithful implementation.
   a literal light-color contribution, so tinting the key light doesn't shift
   env reflections or fringe/glint hue. `keyStrength: 0` zeroes both direct
   terms, leaving only ambient (`0.03`) + env.
-- **enamel** / **enamelHue** / **enamelDepth** / **clearcoat** (Task 6.13) —
-  a translucent coat blended in AFTER spectral/glints, BEFORE exposure/ACES,
-  metal paths only (flat mode untouched). `trans = exp(-absorb * path)` where
-  `path = 1/max(NdotV, 0.35)` (Beer-Lambert-style absorption that deepens at
-  grazing angles) tints the metal color seen through the coat; a `cos`-based
-  `film` term adds a mild thin-film hue drift. The clear coat's specular/env
-  terms use a FLAT normal (`Nc = vec3(0,0,1)`, not the relief normal) since
-  the enamel's top surface fills the grooves smooth — this is what reads as
-  one glossy highlight floating over the groove-following metal highlights
-  beneath, not following them.
+- **enamel** / **enamelHue** / **enamelDepth** (Task 6.13; `clearcoat` removed
+  as too subtle to be worth it) — a translucent coat blended in AFTER
+  spectral/glints, BEFORE exposure/ACES, metal paths only (flat mode
+  untouched). `trans = exp(-absorb * path)` where `path = 1/max(NdotV, 0.35)`
+  (Beer-Lambert-style absorption that deepens at grazing angles) tints the
+  metal color seen through the coat; a `cos`-based `film` term adds a mild
+  thin-film hue drift. `enameled = col * trans`, then `mix(col, enameled,
+  enamel)`. **enamelDepth** is the absorption strength — labeled "Enamel Sat"
+  in the UI (it reads as color saturation; internal key/uniform keep the
+  `enamelDepth` name, and its range stays 0.2–4 rather than 0–1).
 
 ## Status
 
@@ -279,20 +524,94 @@ job is faithful implementation.
   `enamelDepth`/`clearcoat` add a Beer-Lambert-tinted coat with a flat-normal
   clear-coat highlight, applied after spectral/glints; `keyStrength`/
   `lightHue`/`lightSat` tint only the direct diffuse+specular terms via
-  `lightCol`, leaving env reflections and spectral/glint hue untouched) —
-  all implemented, pending review.
-- NEXT: TASK 7 (typed param schema + URL state).
-- Remaining: 7 typed param schema + URL state · 8 React editor · 9 presets +
-  share polish.
+  `lightCol`, leaving env reflections and spectral/glint hue untouched),
+  TASK 7 (typed param schema + URL state — `src/schema.ts` `SCHEMA` is the
+  single source of truth for every param's default/range/step/type/group/
+  urlKey; `params` is derived via `schemaDefaults()` (hand-written literal
+  deleted); `devPanel.ts` GENERATES all folders/sliders from SCHEMA with zero
+  hard-coded param keys (enums render as option lists, ints round on change);
+  `src/urlState.ts` `encode`/`decode` serialize only non-default values as
+  `v1&<urlKey>=<v>` and clamp/ignore-unknown/never-throw on load; a "Copy
+  link" button writes `encode()` to the URL via `replaceState` + clipboard;
+  `main.ts` applies `decode(location.search)` before first draw. `uploadParams`
+  `isFreq` special case deleted (freq1/freq2 are now `type:'int'`), so the
+  engine is fully generic. Panel-only extras kept out of the key-free panel:
+  the session's custom presets moved to `src/presets.ts` (data, generated into
+  buttons); Randomize is now schema-driven over the Pattern/Rosette/Harmonic/
+  Passes groups. Task-spec grouping (6 groups) folded the old Flat/Surface/
+  Enamel/Environment/Texture folders into Pattern/Material/Lighting; later
+  reworked the grouping to Render/Layout/Rosette/Spiral/Layers/Flat/Material/
+  Lighting with `group` as a free-form string and `GROUP_SHOW_WHEN` hiding the
+  Flat vs Material/Lighting folders by render mode),
+  TASK 8 (React editor — added react/react-dom + `@vitejs/plugin-react`,
+  deleted `devPanel.ts`/`main.ts`/`params.ts` and tweakpane; entry is now
+  `src/main.tsx` → `src/ui/App.tsx`. `GuillocheEngine` is framework-agnostic:
+  constructor takes `initialParams`, owns its params map, exposes
+  `setParams(patch)` (merges + marks dirty); React never touches GL. `<Stage>`
+  owns the canvas ref, instantiates the engine in an effect, wires pointer/gyro
+  /resize/DPR/rAF, shows the mode·passes·render caption; `<ControlRail>`
+  generates SCHEMA folders (with `GROUP_SHOW_WHEN` visibility) + presets +
+  footer (Randomize/Reset/Copy link); `<ParamRow>` renders slider/stepper/
+  segmented by type. State is a `useReducer`; each change calls
+  `engine.setParams` (canvas updates next frame, decoupled from React render)
+  and URL `replaceState` is debounced 300ms. Design system hand-rolled in
+  `src/ui/styles.css` per spec, Google Fonts Instrument Sans + IBM Plex Mono),
+  TASK 9 (preset gallery + share polish — `src/presets.ts` replaced with the
+  six spec presets as `{id, title, values}`, values holding only non-default
+  keys; `presetParams()` expands one to defaults-plus-values so applying a
+  preset resets unlisted params first; a dev-only validator rejects unknown
+  keys, out-of-range values, and duplicate ids. Presets render as a sticky
+  pill row at the TOP of the rail with "Copy link" beside them (removed from
+  the footer, which keeps Randomize/Reset). `activePreset` lives in `App` as
+  explicit event state — set on preset click, cleared by any manual edit /
+  Randomize / Reset — rather than derived by comparing params, so an edit that
+  lands back on a preset value doesn't re-light the pill. `urlState.encode`
+  takes an optional preset id and writes `pr=<id>` alongside the params;
+  `decode` now returns `{params, preset}`, validates `pr` against PRESETS, and
+  SEEDS the patch from the named preset before overlaying explicit params, so
+  a bare `?v1&pr=net` reproduces the preset while app-written links (which
+  carry both) stay exact. `GuillocheEngine` throws a distinct
+  `WebGL2UnavailableError`; `<Stage>` catches it, swaps the whole stage for a
+  centered "This tool requires WebGL2." message, and logs nothing — any OTHER
+  construction error still reaches the console so real shader bugs aren't
+  masked) — all implemented, pending review.
+- NEXT: none — TASK 1–9 all implemented.
+- Remaining: nothing; awaiting review of TASK 8 + TASK 9.
+
+## TASK 9 spec deviations (Nate to confirm)
+
+The task's preset table referenced two params that no longer exist, plus one
+value outside its schema range. Mapped as follows rather than stalling:
+
+1. **`lineWidth` → `minLinePx`** (Net/Barleycorn 1.0, Moiré Bloom 0.8).
+   `lineWidth` was the fixed-PX line width deleted in TASK 2.5. `minLinePx` is
+   also in px and the values land naturally in its 0–2 range (default 0.75).
+   `cutWidth` was rejected as the target because it's a FRACTION of pitch, so
+   `cutWidth: 1.0` would mean cuts filling the entire pitch (solid fill) —
+   the opposite of the fine hairline these presets want.
+2. **`metal: 2` → `shaded: 0, invert: 1`** (Certificate). The `2 = ink`
+   material was removed as redundant with flat mode, and this pairing is its
+   documented replacement (dark lines on a light paper plate).
+3. **Moiré Bloom `amp1: 0.12` → `0.1`.** `amp1`'s schema max is 0.1. Left at
+   0.12 it would render once but `decode()` clamps on load, so a shared link
+   would NOT reproduce what the author saw — breaking this task's own
+   round-trip acceptance criterion. Clamped at the source instead; raising the
+   schema max would change the slider range for every preset and for
+   Randomize, which is outside this task.
+
+Also: the seven custom presets from the TASK 7 session (Opal Silver, Calm
+Gold, Psych, Spiro, and the three Ref [..] entries) were REPLACED, since the
+task defines the gallery as these six. They're recoverable from git at
+`f2bb4f5:src/presets.ts` if any should be folded back in.
 
 ## Review notes (carry these forward)
 
-1. **freq rounding is hard-coded in `uploadParams`** (`isFreq` check). Known
-   violation of the generic-engine rule; tolerated until TASK 7. At TASK 7:
-   delete the special case and make freq1/freq2 `type: 'int'` in the schema
-   unconditionally.
-2. **Engine imports the `params` singleton directly.** Acceptable now;
-   TASK 8 replaces this with `engine.setParams(patch)`. Don't decouple early.
+1. ~~**freq rounding is hard-coded in `uploadParams`** (`isFreq` check).~~ —
+   resolved in TASK 7: `isFreq` deleted, freq1/freq2 are `type: 'int'` in the
+   schema, so uploads are already integer and `uploadParams` is fully generic.
+2. ~~**Engine imports the `params` singleton directly.**~~ — resolved in
+   TASK 8: `GuillocheEngine` takes `initialParams` and owns its params map,
+   updated via `engine.setParams(patch)`; the `params.ts` singleton was deleted.
 3. ~~**DPR-change edge:** ResizeObserver misses devicePixelRatio changes~~ —
    fixed in `main.ts` (`watchDevicePixelRatio`): a `matchMedia` listener calls
    `engine.resize()` and re-registers itself on each fire.

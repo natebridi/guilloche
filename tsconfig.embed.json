@@ -1,0 +1,23 @@
+// Declaration-only build for the published package. Scoped to the
+// framework-agnostic modules — src/ui is the editor app and is not shipped.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "dist-embed/types",
+    "allowImportingTsExtensions": false,
+    "rootDir": "src"
+  },
+  "include": [
+    "src/index.ts",
+    "src/embed.ts",
+    "src/element.ts",
+    "src/schema.ts",
+    "src/urlState.ts",
+    "src/presets.ts",
+    "src/engine",
+    "src/vite-env.d.ts"
+  ]
+}

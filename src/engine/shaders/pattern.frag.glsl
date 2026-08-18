@@ -20,7 +20,6 @@ uniform float u_glint;
 uniform float u_enamel;
 uniform float u_enamelHue;
 uniform float u_enamelDepth;
-uniform float u_clearcoat;
 uniform float u_envStrength;
 uniform float u_envWarmth;
 uniform float u_keyStrength;
@@ -40,10 +39,14 @@ uniform float u_cavity;
 uniform float u_anisotropy;
 uniform float u_shininess;
 uniform float u_specStrength;
+uniform float u_finish;
+uniform float u_finishFreq;
 uniform float u_offset;
 uniform float u_twist;
+uniform float u_twistWaveAmp;
+uniform float u_twistWaveFreq;
+uniform float u_twistWavePhase;
 uniform float u_passes;
-uniform float u_passOffset;
 uniform float u_passAngle;
 uniform float u_passShift;
 uniform float u_amp1;
@@ -115,15 +118,26 @@ vec2 taperEnv(float coord) {
     return vec2(F0 + (1.0 - F0) * envRaw, (1.0 - F0) * envDRaw);
 }
 
-// One cutting pass; po = rosette rotation for this pass.
+// One cutting pass. Passes are differentiated by passAngle (field rotation)
+// and passShift (coord advance), applied by the caller before this is reached.
 // Returns the phase value AND writes the offset-adjusted coord to outCoord.
-float phaseField(vec2 p, float po, float shift, out float outCoord) {
+float phaseField(vec2 p, float shift, out float outCoord) {
   float coord, along;
   if (u_mode < 0.5) { coord = length(p);  along = atan(p.y, p.x); }
-  else              { coord = -p.y;       along = p.x * PI; }
+  else {
+    // Linear origin placed past the far corner (half the canvas diagonal + a
+    // margin) so coord >= 0 across the WHOLE canvas for any pass rotation — the
+    // pattern fills the page instead of masking a half-plane at screen centre.
+    coord = 0.5 * length(u_res) / min(u_res.x, u_res.y) + 0.5 - p.y;
+    along = p.x * PI;
+  }
   coord -= u_offset + shift;
   outCoord = coord;
-  float turn = po + u_twist * coord * TAU;
+  // Phase vs radius: linear twist + an optional radial wave so the arms
+  // undulate (serpentine/hooked) instead of running as a constant spiral.
+  float twAmp = u_twistWaveAmp;
+  float turn = u_twist * coord * TAU
+             + twAmp * sin(u_twistWaveFreq * coord * TAU + u_twistWavePhase);
   float Cc = max(coord, 0.0);
   float taperR = max(u_ampTaper, 1.5 * (u_amp1 + u_amp2));
   float env = taperEnv(coord).x;
@@ -133,7 +147,7 @@ float phaseField(vec2 p, float po, float shift, out float outCoord) {
 }
 
 // Gradient of the field for one pass. p is the ALREADY rotated point (pr).
-vec2 phaseGradient(vec2 p, float po, float shift) {
+vec2 phaseGradient(vec2 p, float shift) {
   float coord, along; vec2 gradCoord, gradAlong;
   if (u_mode < 0.5) {
     float r = length(p);
@@ -142,13 +156,20 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
     gradCoord = p / max(r, 1e-5);
     gradAlong = vec2(-p.y, p.x) / max(dot(p, p), 1e-6);
   } else {
-    coord = -p.y - u_offset - shift;
+    // Same shifted linear origin as phaseField (constant base, so gradCoord is
+    // still (0,-1) — the base doesn't vary with p).
+    coord = 0.5 * length(u_res) / min(u_res.x, u_res.y) + 0.5 - p.y - u_offset - shift;
     along = p.x * PI;
     gradCoord = vec2(0.0, -1.0);
     gradAlong = vec2(PI, 0.0);
   }
   float T = u_twist * TAU;
-  float turn = po + T * coord;
+  float kw = u_twistWaveFreq * TAU;
+  float twAmp = u_twistWaveAmp;
+  float turn = T * coord
+             + twAmp * sin(kw * coord + u_twistWavePhase);
+  // d(turn)/d(coord): the LOCAL twist rate, wave included.
+  float dTurn = T + twAmp * kw * cos(kw * coord + u_twistWavePhase);
   float w1 = waveFnDeriv(u_freq1 * along + u_phase1 + turn);
   float w2 = waveFnDeriv(u_freq2 * along + u_phase2 + turn);
   float v1 = waveFn(u_freq1 * along + u_phase1 + turn);
@@ -161,18 +182,18 @@ vec2 phaseGradient(vec2 p, float po, float shift) {
 
   float S = u_amp1 * v1 + u_amp2 * v2;
   float dFdCoord = 1.0 - envD * S
-                       - env * (u_amp1 * w1 + u_amp2 * w2) * T;
+                       - env * (u_amp1 * w1 + u_amp2 * w2) * dTurn;
   float dFdAlong = -env * (u_amp1 * w1 * u_freq1 + u_amp2 * w2 * u_freq2);
   return dFdCoord * gradCoord + dFdAlong * gradAlong;
 }
 
-float lineMask(vec2 p, float po, float shift) {
+float lineMask(vec2 p, float shift) {
   float c;
-  float f = phaseField(p, po, shift, c);
+  float f = phaseField(p, shift, c);
   float u = fract(u_density * f) - 0.5; // position within pitch
   float d = abs(u);                            // distance from line center
   float aa = max(u_density * fwidth(f), 1e-6); // AA width in phase units
-  vec2 gField = phaseGradient(p, po, shift);
+  vec2 gField = phaseGradient(p, shift);
   float gMag = length(gField);
   float halfEff = (u_cutterMode < 0.5)
       ? 0.5 * u_cutWidth
@@ -195,9 +216,12 @@ vec3 envSample(vec3 d) {
   vec3 stripTint = mix(vec3(1.0, 0.98, 0.92),
                        u_envWarmth > 0.0 ? warm : cool,
                        abs(u_envWarmth));
+  // Strips kept modest: at coarse density the broad groove walls all reflect
+  // these, so a hot studio floods the frame (not scaled by keyStrength). Tuned
+  // to read as selective bright reflections / fill, not a wash.
   vec3 env = vec3(0.015, 0.017, 0.020)
-           + stripTint * strip1 * 2.2
-           + vec3(0.9, 0.93, 1.0) * strip2 * 0.8
+           + stripTint * strip1 * 1.0
+           + vec3(0.9, 0.93, 1.0) * strip2 * 0.4
            + vec3(0.16, 0.17, 0.19) * floorGlow;
   return mix(env, vec3(0.008, 0.009, 0.011), dark * 0.85);
 }
@@ -230,8 +254,7 @@ void main() {
       float a = float(i) * u_passAngle;
       float ca = cos(a), sa = sin(a);
       vec2 pr = vec2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y); // rotate by -a
-      line = max(line, lineMask(pr, float(i) * u_passOffset,
-                                float(i) * u_passShift));
+      line = max(line, lineMask(pr, float(i) * u_passShift));
     }
 
     // Flat engraving render. The lighter element is hue/sat-tintable; invert
@@ -247,6 +270,14 @@ void main() {
     return;
   }
 
+  // Key light + view + half-vector (independent of which pass wins; also used
+  // by the intersection-crease glint after the loop).
+  vec2 lAz = (length(u_mouse) > 1e-4)
+      ? normalize(u_mouse) : normalize(vec2(0.35, 0.55));
+  vec3 L = normalize(vec3(lAz, u_lightHeight));
+  vec3 V = vec3(0.0, 0.0, 1.0);
+  vec3 H = normalize(L + V);
+
   // Lit heightfield: deepest cut wins, track its analytic gradient.
   float hMin = 0.0;
   vec2 gradWorld = vec2(0.0);
@@ -254,20 +285,21 @@ void main() {
   vec2 gradFieldWorldWin = vec2(1.0, 0.0);
   float anisoWin = 0.0;
   float dWin = 0.0;
+  float uWin = 0.0;   // winner's signed position within pitch (which lip)
+  float h2 = 0.0;   // second-deepest cut height, for pass-intersection creases
 
   for (int i = 0; i < 4; i++) {
     if (i >= n) break;
     float a = float(i) * u_passAngle;
     float ca = cos(a), sa = sin(a);
     vec2 pr = vec2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y); // rotate by -a
-    float po = float(i) * u_passOffset;
     float shift = float(i) * u_passShift;
 
     float c;
-    float f = phaseField(pr, po, shift, c);
+    float f = phaseField(pr, shift, c);
     float u = fract(u_density * f) - 0.5;
     float d = abs(u);
-    vec2 gField = phaseGradient(pr, po, shift);
+    vec2 gField = phaseGradient(pr, shift);
     float gMag = length(gField);
     float halfEff = (u_cutterMode < 0.5)
         ? 0.5 * u_cutWidth
@@ -298,12 +330,16 @@ void main() {
                              sa * gField.x + ca * gField.y);
 
     if (h < hMin) {
+      h2 = hMin;   // demote the old winner to runner-up
       hMin = h;
       gradWorld = gWorld;
       qWin = q;
       gradFieldWorldWin = gFieldWorld;
       anisoWin = anisoW;
       dWin = d;
+      uWin = u;
+    } else if (h < h2) {
+      h2 = h;
     }
   }
 
@@ -316,22 +352,38 @@ void main() {
     // Groove-aligned noise coords, stretched 1:6.7 along the cut direction:
     vec2 gc = vec2(dot(p, Bw), dot(p, Tw) * 0.15) * u_grainScale;
     float streak = vnoise(gc) - 0.5;
-    // Perturb ACROSS the groove, scaled by local slope, gated into cuts:
+    // Tilt the normal ALONG the groove's run (Tw), not across it (Bw).
+    //
+    // Bw is where this used to point, and it made the whole term invisible: a
+    // groove's height varies only across itself, so gradH_world is ALREADY
+    // parallel to Bw. Adding more Bw is collinear — it changes the vector's
+    // length and never its direction — and the length is then pinned by the
+    // Task 6.10 clamp three lines below, which erased the perturbation outright
+    // wherever the walls are steep enough to clamp, i.e. wherever grooves read
+    // at all. Tw is also the physically right component: a tool mark is the cut
+    // depth rippling as the work turns under the cutter, so it tilts the
+    // surface along the direction of travel.
     float slopeW = 0.06 + 0.6 * length(gradH_world);
-    gradH_world += Bw * streak * u_grain * slopeW * (0.3 + 0.7 * anisoWin);
-    // Faint residual grain on flat land:
+    gradH_world += Tw * streak * u_grain * slopeW * (0.3 + 0.7 * anisoWin);
+    // Residual grain on flat land, gated to fade in exactly where the groove
+    // streak fades out. Task 6.11 cut this to 0.012 to sit under the streak
+    // term — but with that term dead, 0.012 alone is a ~0.7 degree normal tilt,
+    // below anything the eye picks up. Back to roughly the Task 6.8 level,
+    // still well under the in-groove streak.
     vec2 cell = floor(p * u_grainScale);
     vec2 landG = vec2(hash21(cell), hash21(cell + 17.7)) - 0.5;
-    gradH_world += landG * u_grain * 0.012 * (1.0 - anisoWin);
+    gradH_world += landG * u_grain * 0.05 * (1.0 - anisoWin);
   }
 
   float gLen = length(gradH_world);
   if (gLen > 2.5) gradH_world *= 2.5 / gLen;
 
   vec3 N = normalize(vec3(-gradH_world, 1.0));
-  vec3 L = normalize(vec3(u_mouse - p, u_lightHeight));
-  vec3 V = vec3(0.0, 0.0, 1.0);
-  vec3 H = normalize(L + V);
+  // L / V / H were computed before the pass loop (the pointer AIMS the key
+  // light by azimuth only — no plate tilt, no intensity coupling; view is
+  // orthographic so the flat land doesn't band under coloured light; the
+  // turned finish carries the flat-metal interest, groove walls still catch
+  // env reflections via their normals).
   float diff = max(dot(N, L), 0.0);
 
   vec3 lightCol = mix(vec3(1.0), hue2rgb(u_lightHue), u_lightSat)
@@ -366,9 +418,44 @@ void main() {
   float fresnel = 0.6 + 0.4 * pow(1.0 - NdotV, 3.0);
   float cav = 1.0 - u_cavity * pow(qWin, 1.5);
   vec3 env = envSample(R) * u_envStrength;
-  vec3 col = base * (0.03 + 0.15 * diff * lightCol) * cav
+  // Direct specular is scaled well below 1.0 so the anisotropic highlight
+  // (which peaks at full white along tangent-aligned grooves, now across the
+  // whole frame under the directional light) reads as a punchy glint with
+  // tonemap headroom instead of a blown-out sheet. Push specStrength/
+  // keyStrength up to reach clipping deliberately.
+  vec3 col = base * (0.03 + 0.12 * diff * lightCol) * cav
            + env * specTint * fresnel * cav
-           + specTint * spec * lightCol;
+           + 0.25 * specTint * spec * lightCol;
+
+  // Lathe/turned surface finish: fine concentric (Radial) or linear (Linear)
+  // tooling marks. A BROAD anisotropic sheen lights a whole field of fine
+  // hairline bands (not just the tight 2-arm streak). u_finishFreq sets
+  // hairline density (crank to near-noise); u_shininess sharpens the bright
+  // streak layered on top. Fades toward the rim; whole surface incl. flat land.
+  if (u_finish > 0.0) {
+    float radial = length(p);
+    vec2 Ff = (u_mode < 0.5)
+        ? normalize(vec2(-p.y, p.x) + vec2(1e-5))  // concentric: tangential
+        : vec2(1.0, 0.0);                          // linear brush
+    vec3 Tf = normalize(vec3(Ff, 0.0));
+    Tf = normalize(Tf - N * dot(Tf, N));           // onto the surface
+    // Uses the shared half-vector H, so the finish sheen sweeps together with
+    // the pointer-aimed key light (no separate offset needed).
+    float aniso = sqrt(max(1.0 - dot(Tf, H) * dot(Tf, H), 0.0));
+    // Broad sheen (fills many bands) + a tight sweeping streak on top:
+    float sheen = 0.5 * aniso * aniso + pow(aniso, u_shininess);
+    // Fine tooling hairlines, analytically AA'd so they turn to a smooth wash
+    // (not aliased sparkle) once the frequency outruns the pixel grid:
+    float fcoord = (u_mode < 0.5) ? radial : -p.y;
+    float ph = fcoord * u_finishFreq * TAU;
+    float grain = 0.55 + 0.45 * sin(ph) / (1.0 + fwidth(ph));
+    float edgeFade = 1.0 - smoothstep(0.30, 0.72, radial);
+    // Only on uncut land: the engraving cuts through the finish, so grooves
+    // expose fresh metal without the tooling marks (anisoWin is 1 inside a
+    // cut, 0 on land).
+    col += specTint * sheen * grain * u_finish * edgeFade
+           * (1.0 - anisoWin) * lightCol;
+  }
 
   vec3 spectralSum = vec3(0.0);
   vec2 B = (length(gradFieldWorldWin) > 1e-5)
@@ -389,35 +476,47 @@ void main() {
   col += spectralSum * u_iridescence * anisoWin * (0.15 + spec);
 
   if (u_glint > 0.0) {
-    float edgeBand  = anisoWin * (1.0 - anisoWin) * 4.0;   // cut edges
-    float crestBand = smoothstep(0.40, 0.49, dWin);        // ridge crests
-    vec2 gcell = floor(p * u_grainScale * 1.7);
-    float sel = step(0.01, hash21(gcell));        // ~25% of cells eligible
-    vec2 mn = (vec2(hash21(gcell + 3.1), hash21(gcell + 7.7)) - 0.5) * 1.99;
-    vec3 Ng = normalize(vec3(N.xy + mn, N.z));    // per-glint micro-normal
-    float gs = pow(max(dot(Ng, H), 0.0), 60.0);  // sharp personal flash
-    float g = (edgeBand + 0.6 * crestBand) * sel * gs * u_glint * 3.0;
-    col += (vec3(0.85) + spectralSum * 0.6) * g * lightCol;
+    // Bright hairline(s) that flash where an edge rakes the light — not random
+    // sparkle. Sharp anisotropic term along the winner's groove tangent Tg.
+    float TgH = dot(Tg, H);
+    float edgeSpec = pow(max(sqrt(max(1.0 - TgH * TgH, 0.0)), 0.0),
+                         u_shininess * 2.0);
+    // (a) the winning cut's outer lip.
+    float rim = anisoWin * (1.0 - anisoWin) * 4.0;
+    // Only the lip FACING the light glints, not both sides: the outward
+    // direction of the winning cut's edge is sign(uWin) along its field
+    // gradient; gate by how much that direction faces the key light in-plane.
+    vec2 gfDir = (length(gradFieldWorldWin) > 1e-5)
+        ? normalize(gradFieldWorldWin) : vec2(1.0, 0.0);
+    vec2 Ldir = normalize(L.xy + vec2(1e-5));
+    float lightSide = smoothstep(0.0, 0.4, sign(uWin) * dot(gfDir, Ldir));
+    rim *= lightSide;
+    // (b) the pass-intersection crease: the NEW edge where the two deepest cuts
+    // meet at equal depth (both actually cutting, so h2 < 0), running
+    // diagonally down into the overlap. Thin AA'd band where hMin == h2.
+    float dh = abs(hMin - h2);
+    float crease = (1.0 - smoothstep(0.0, max(fwidth(dh) * 1.5, 1e-5), dh))
+                 * smoothstep(0.0, u_relief * 0.004, -h2);
+    col += (vec3(1.0) + spectralSum * 0.5) * (rim + crease) * edgeSpec
+           * u_glint * 2.0 * lightCol;
   }
 
   if (u_enamel > 0.0) {
     vec3 dye = hue2rgb(u_enamelHue);
-    vec3 absorb = (vec3(1.0) - dye) * u_enamelDepth;
-    float path = 1.0 / max(NdotV, 0.35);          // longer path at grazing
-    vec3 trans = exp(-absorb * path);
-    // Mild thin-film sheen in the coating:
-    vec3 film = 0.5 + 0.5 * cos(u_enamelDepth * 4.0 * NdotV * TAU
-                                + vec3(0.0, 2.1, 4.2));
-    trans *= mix(vec3(1.0), film, 0.3 * u_enamel);
-    // The enamel fills the grooves: its top surface is FLAT, so the
-    // clear coat lights from the plate normal, not the relief:
-    vec3 Nc = vec3(0.0, 0.0, 1.0);
-    float ccSpec = pow(max(dot(Nc, normalize(L + V)), 0.0), 180.0)
-                   * u_clearcoat;
-    vec3 ccEnv = envSample(reflect(-V, Nc)) * u_envStrength * 0.35
-                 * u_clearcoat;
-    vec3 enameled = col * trans + ccEnv + vec3(ccSpec) * lightCol;
-    col = mix(col, enameled, u_enamel);
+    float sat = u_enamelDepth;                     // "Enamel Sat" (0 = neutral)
+    float path = 1.0 / max(NdotV, 0.35);           // longer path at grazing
+    // Beer-Lambert transmission: the metal seen through the coloured coat.
+    vec3 trans = exp(-(vec3(1.0) - dye) * sat * path);
+    // Mild thin-film sheen, faded out as Sat -> 0 so Sat 0 is truly neutral:
+    vec3 film = 0.5 + 0.5 * cos(sat * 4.0 * NdotV * TAU + vec3(0.0, 2.1, 4.2));
+    trans *= mix(vec3(1.0), film, 0.3 * u_enamel * min(sat, 1.0));
+    vec3 tinted = col * trans;
+    // Vivify toward the pure dye hue (keeping the metal's brightness + a small
+    // lift) so pushing Sat reads as bold jewel-bright glass rather than a muddy
+    // dark tint — this is what lets Enamel be driven dramatic.
+    float lum = dot(tinted, vec3(0.299, 0.587, 0.114));
+    vec3 vivid = mix(tinted, dye * (lum + 0.08) * 1.8, clamp(sat * 0.28, 0.0, 0.9));
+    col = mix(col, vivid, u_enamel);
   }
 
   col *= u_exposure;
