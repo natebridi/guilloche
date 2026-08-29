@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ToggleButton, ToggleButtonGroup, Typography } from "@jig-ui/react";
+import { Button, Dialog, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@jig-ui/react";
 import { SCHEMA, GROUP_SHOW_WHEN, groupsInOrder } from "../schema";
 import { PRESETS, findPreset, type Preset } from "../presets";
 import { ParamRow } from "./ParamRow";
@@ -9,24 +9,26 @@ interface ControlRailProps {
   activePreset: string | null;
   onChange: (key: string, value: number) => void;
   onPreset: (preset: Preset) => void;
-  onRandomize: () => void;
-  onReset: () => void;
   onCopyLink: () => Promise<void> | void;
   onCopyEmbed: () => Promise<void> | void;
 }
+
+// How many preset pills the rail itself shows. The rest live behind "View
+// all" — nine pills wrapped to four rows and pushed every control below the
+// fold before you had touched anything.
+const RAIL_PRESETS = 3;
 
 export function ControlRail({
   params,
   activePreset,
   onChange,
   onPreset,
-  onRandomize,
-  onReset,
   onCopyLink,
   onCopyEmbed,
 }: ControlRailProps) {
   // Copying is silent otherwise, which reads as a dead button.
   const [copied, setCopied] = useState<"link" | "embed" | "error" | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -45,29 +47,71 @@ export function ControlRail({
     [],
   );
 
+  const railPresets = PRESETS.slice(0, RAIL_PRESETS);
+  const railPressed = railPresets.some((p) => p.id === activePreset) ? activePreset : null;
+
   return (
     <aside className="rail">
       <div className="rail-scroll">
         <section className="group preset-bar">
-          <h2 className="group-heading">Presets</h2>
-          <ToggleButtonGroup
-            className="pill-row"
-            aria-label="Presets"
-            value={activePreset ? [activePreset] : []}
-            // Clicking the lit pill would otherwise clear the group; there is
-            // no "no preset" the user can pick, so it re-applies instead —
-            // which is also how you get back to a preset after editing it.
-            onValueChange={(ids) => {
-              const preset = findPreset(ids[0] ?? activePreset ?? "");
-              if (preset) onPreset(preset);
-            }}
-          >
-            {PRESETS.map((preset) => (
-              <ToggleButton key={preset.id} size="sm" value={preset.id}>
-                {preset.title}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
+          <Typography as="h2" with="display06">Presets</Typography>
+          <Stack direction="column" spacing="300" align="start">
+            <ToggleButtonGroup
+              className="pill-row"
+              aria-label="Presets"
+              // Only claim a value the group actually contains. When the active
+              // preset is one of the six behind "View all", the rail's group
+              // holds no matching button and must report an empty selection
+              // rather than a value none of its children answers to.
+              value={railPressed ? [railPressed] : []}
+              // Clicking the lit pill would otherwise clear the group; there is
+              // no "no preset" the user can pick, so it re-applies instead —
+              // which is also how you get back to a preset after editing it.
+              onValueChange={(ids) => {
+                const preset = findPreset(ids[0] ?? railPressed ?? "");
+                if (preset) onPreset(preset);
+              }}
+            >
+              {railPresets.map((preset) => (
+                <ToggleButton key={preset.id} size="sm" value={preset.id}>
+                  {preset.title}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+
+            {/* Jig's Dialog composes the open handler onto whatever `trigger`
+                is, and its body is already wrapped in a ScrollArea — so the
+                whole gallery needs no styling of its own here. Open state is
+                controlled only because picking a preset has to close it. */}
+            <Dialog
+              open={galleryOpen}
+              onOpenChange={setGalleryOpen}
+              size="sm"
+              title="Presets"
+              description="Pick one to load it. Everything you have not changed resets to its default."
+              trigger={
+                <Button size="sm" variant="ghost">
+                  View all
+                </Button>
+              }
+            >
+              <Stack direction="column" spacing="200" align="stretch">
+                {PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    size="md"
+                    variant={preset.id === activePreset ? "primary" : "ghost"}
+                    onClick={() => {
+                      onPreset(preset);
+                      setGalleryOpen(false);
+                    }}
+                  >
+                    {preset.title}
+                  </Button>
+                ))}
+              </Stack>
+            </Dialog>
+          </Stack>
           <div className="share-row">
             <Button
               size="sm"
@@ -88,9 +132,9 @@ export function ControlRail({
             </Button>
           </div>
           {copied === "error" && (
-            <p className="share-note" role="status">
+            <Typography as="p" with="caption01" role="status" className="share-note">
               Clipboard blocked — the URL bar has the link.
-            </p>
+            </Typography>
           )}
         </section>
 
@@ -115,15 +159,6 @@ export function ControlRail({
           );
         })}
       </div>
-
-      <footer className="rail-footer">
-        <Button size="sm" variant="secondary" onClick={onRandomize}>
-          Randomize
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onReset}>
-          Reset
-        </Button>
-      </footer>
     </aside>
   );
 }

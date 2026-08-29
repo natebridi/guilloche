@@ -7,6 +7,9 @@ const float PI = 3.14159265359;
 uniform vec2 u_res;
 uniform vec2 u_mouse;
 uniform float u_mode;
+uniform float u_scale;
+uniform float u_centerX;
+uniform float u_centerY;
 uniform float u_shaded;
 uniform float u_invert;
 uniform float u_flatHue;
@@ -31,14 +34,12 @@ uniform float u_density;
 uniform float u_cutWidth;
 uniform float u_cutterMode;
 uniform float u_ampTaper;
-uniform float u_minLinePx;
 uniform float u_waveShape;
 uniform float u_relief;
 uniform float u_flank;
 uniform float u_cavity;
 uniform float u_anisotropy;
 uniform float u_shininess;
-uniform float u_specStrength;
 uniform float u_finish;
 uniform float u_finishFreq;
 uniform float u_offset;
@@ -121,6 +122,18 @@ vec2 taperEnv(float coord) {
 // One cutting pass. Passes are differentiated by passAngle (field rotation)
 // and passShift (coord advance), applied by the caller before this is reached.
 // Returns the phase value AND writes the offset-adjusted coord to outCoord.
+// Linear mode measures `coord` from an origin pushed out past the far corner,
+// so coord >= 0 across the whole canvas for ANY pass rotation (otherwise the
+// inner mask empties a half-plane through the middle of the plate). Scale and
+// pan both move where that corner lands in pattern space, so the origin has to
+// move with them. Shared by phaseField and phaseGradient because the two MUST
+// agree exactly. At scale 1 with no pan this is the original constant.
+float linearOrigin() {
+  float corner = 0.5 * length(u_res) / min(u_res.x, u_res.y)
+               + length(vec2(u_centerX, u_centerY));
+  return corner / max(u_scale, 1e-4) + 0.5;
+}
+
 float phaseField(vec2 p, float shift, out float outCoord) {
   float coord, along;
   if (u_mode < 0.5) { coord = length(p);  along = atan(p.y, p.x); }
@@ -128,7 +141,7 @@ float phaseField(vec2 p, float shift, out float outCoord) {
     // Linear origin placed past the far corner (half the canvas diagonal + a
     // margin) so coord >= 0 across the WHOLE canvas for any pass rotation — the
     // pattern fills the page instead of masking a half-plane at screen centre.
-    coord = 0.5 * length(u_res) / min(u_res.x, u_res.y) + 0.5 - p.y;
+    coord = linearOrigin() - p.y;
     along = p.x * PI;
   }
   coord -= u_offset + shift;
@@ -158,7 +171,7 @@ vec2 phaseGradient(vec2 p, float shift) {
   } else {
     // Same shifted linear origin as phaseField (constant base, so gradCoord is
     // still (0,-1) — the base doesn't vary with p).
-    coord = 0.5 * length(u_res) / min(u_res.x, u_res.y) + 0.5 - p.y - u_offset - shift;
+    coord = linearOrigin() - p.y - u_offset - shift;
     along = p.x * PI;
     gradCoord = vec2(0.0, -1.0);
     gradAlong = vec2(PI, 0.0);
@@ -198,7 +211,12 @@ float lineMask(vec2 p, float shift) {
   float halfEff = (u_cutterMode < 0.5)
       ? 0.5 * u_cutWidth
       : 0.5 * u_cutWidth * clamp(gMag, 0.05, 4.0);
-  float half_ = max(halfEff, u_minLinePx * aa);
+  // Legibility floor: never let a cut render thinner than one screen pixel,
+  // or a dense flat pattern dissolves into grey. Was a param; it only ever
+  // applied here in the flat path (the lit loop has its own geometry) and the
+  // visible range between 0 and 2px was too narrow to be worth a slider.
+  const float MIN_LINE_PX = 1.0;
+  float half_ = max(halfEff, MIN_LINE_PX * aa);
   float line = 1.0 - smoothstep(half_ - aa, half_ + aa, d);
   float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f);
   return line * inner;
@@ -242,7 +260,23 @@ vec3 spectralColor(float x) {
 }
 
 void main() {
-  vec2 p = (gl_FragCoord.xy - 0.5 * u_res) / min(u_res.x, u_res.y);
+  // PLATE space: the element's own box, [-0.5, 0.5] across the short axis.
+  // Effects that describe the plate rather than the pattern — the flat
+  // vignette, the turned finish's rim fade — stay in it, so zooming the
+  // pattern can never drag a rim shadow into the middle of the canvas.
+  vec2 pPlate = (gl_FragCoord.xy - 0.5 * u_res) / min(u_res.x, u_res.y);
+  // PATTERN space: pan FIRST, then zoom, so zoom magnifies about the panned
+  // origin instead of sweeping it across the plate as scale changes. Every
+  // pattern-derived quantity below reads `p`, so lobes, pitch, the central
+  // hole, the taper radius and the tool grain all scale together — magnifying
+  // the engraving, not making it finer.
+  //
+  // The gradients are deliberately NOT chain-ruled back to plate units: wall
+  // slope is intrinsic to the geometry, and a real engraving seen larger has
+  // the same slopes, so leaving phaseGradient in pattern space is what keeps
+  // the lighting from flattening as you zoom in. Screen-space `fwidth` AA is
+  // unaffected — it differentiates the displayed field either way.
+  vec2 p = (pPlate - vec2(u_centerX, u_centerY)) / max(u_scale, 1e-4);
 
   int n = int(u_passes + 0.5);
 
@@ -265,7 +299,7 @@ void main() {
     vec3 plate  = (u_invert > 0.5) ? tintLight : neutralDark;
     vec3 stroke = (u_invert > 0.5) ? neutralDark : tintLight;
     vec3 col = mix(plate, stroke, line);
-    col *= 1.0 - 0.35 * dot(p, p);   // vignette
+    col *= 1.0 - 0.35 * dot(pPlate, pPlate);   // vignette (plate, not pattern)
     outColor = vec4(col, 1.0);
     return;
   }
@@ -399,8 +433,8 @@ void main() {
   float specAniso = pow(max(sqrt(max(1.0 - TdotH * TdotH, 0.0)), 0.0),
                         u_shininess);
   float specIso = pow(max(dot(N, H), 0.0), u_shininess);
-  float spec = mix(specIso, specAniso, u_anisotropy) * u_specStrength;
-  spec = mix(specIso * u_specStrength, spec, anisoWin);
+  float spec = mix(specIso, specAniso, u_anisotropy);
+  spec = mix(specIso, spec, anisoWin);
 
   // Sampled with the reflection vector:
   vec3 R = reflect(-V, N);
@@ -421,8 +455,15 @@ void main() {
   // Direct specular is scaled well below 1.0 so the anisotropic highlight
   // (which peaks at full white along tangent-aligned grooves, now across the
   // whole frame under the directional light) reads as a punchy glint with
-  // tonemap headroom instead of a blown-out sheet. Push specStrength/
-  // keyStrength up to reach clipping deliberately.
+  // tonemap headroom instead of a blown-out sheet. Push keyStrength up to
+  // reach clipping deliberately.
+  //
+  // There used to be a `specStrength` multiplier on `spec` as well. It was
+  // redundant: `spec` is already multiplied by `lightCol` (= keyStrength), so
+  // the two entered this term as a plain product and only their PRODUCT was
+  // ever visible. All keyStrength does that specStrength did not is carry the
+  // diffuse term along with it — and on a metal that term is weighted 0.12
+  // against specular's 0.25, over a base colour that barely diffuses anyway.
   vec3 col = base * (0.03 + 0.12 * diff * lightCol) * cav
            + env * specTint * fresnel * cav
            + 0.25 * specTint * spec * lightCol;
@@ -433,7 +474,8 @@ void main() {
   // hairline density (crank to near-noise); u_shininess sharpens the bright
   // streak layered on top. Fades toward the rim; whole surface incl. flat land.
   if (u_finish > 0.0) {
-    float radial = length(p);
+    float radial = length(p);          // pattern space: hairline phase
+    float plateR = length(pPlate);     // plate space: the rim fade
     vec2 Ff = (u_mode < 0.5)
         ? normalize(vec2(-p.y, p.x) + vec2(1e-5))  // concentric: tangential
         : vec2(1.0, 0.0);                          // linear brush
@@ -449,7 +491,7 @@ void main() {
     float fcoord = (u_mode < 0.5) ? radial : -p.y;
     float ph = fcoord * u_finishFreq * TAU;
     float grain = 0.55 + 0.45 * sin(ph) / (1.0 + fwidth(ph));
-    float edgeFade = 1.0 - smoothstep(0.30, 0.72, radial);
+    float edgeFade = 1.0 - smoothstep(0.30, 0.72, plateR);
     // Only on uncut land: the engraving cuts through the finish, so grooves
     // expose fresh metal without the tooling marks (anisoWin is 1 inside a
     // cut, 0 on land).

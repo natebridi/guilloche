@@ -25,7 +25,7 @@ editor's **Copy embed** button writes the whole snippet above.
 | Attribute | Values | Notes |
 | --- | --- | --- |
 | `params` | share-link string | Reactive — change it and the pattern updates in place. Anything unset falls back to its default. |
-| `interactive` | `hover` (default), `off`, `gyro` | `hover` aims the key light while the pointer is over the element. `off` attaches no listeners at all. `gyro` adds device orientation — see below. |
+| `interactive` | `track` (default), `hover`, `off`, `gyro` | `track` aims the key light from the pointer anywhere on the page, so it keeps working when something is layered over the plate. `hover` only aims while the pointer is directly over the element. `off` attaches no listeners at all. `gyro` adds device orientation — see below. In every mode the aim holds its last value when the pointer is lost, rather than snapping back. |
 | `max-dpr` | number, default `2` | Cap on `devicePixelRatio`. The shader is expensive per-pixel; lower this for large embeds. |
 
 Sizing is plain CSS — the element defaults to `width: 100%` with a 1:1 aspect
@@ -134,20 +134,27 @@ package ships ES modules only, which every WebGL2-capable browser supports.
 
 ## Editor
 
-The tuning UI is a separate React app in this repo (`npm run dev`). It isn't
-part of the published package.
+The tuning UI is a separate React app in this repo, served at `/create`. It
+isn't part of the published package.
 
 ## Development
 
+The site is a Vite multi-page app with two routes:
+
+| route     | source                              | what it is                      |
+| --------- | ----------------------------------- | ------------------------------- |
+| `/`       | `index.html` + `site/`              | landing page and documentation  |
+| `/create` | `create/index.html` + `src/ui/`     | the pattern editor              |
+
 ```sh
-npm run dev          # editor at :5183
-npm run build        # editor -> dist/
+npm run dev          # both routes at :5183
+npm run build        # site -> dist/ (dist/index.html, dist/create/index.html)
 npm run build:embed  # package -> dist-embed/ (+ .d.ts)
 npm run build:all    # both
 ```
 
-`demo/embed.html` is a static page exercising the element against a local
-build — run `npm run build:embed` first.
+The landing page imports the element from `src/embed` directly, so it has HMR
+and needs no prior `npm run build:embed`.
 
 ## License
 

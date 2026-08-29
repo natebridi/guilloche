@@ -10,8 +10,8 @@ export type ParamType = "float" | "int" | "enum";
 // The engine's units and the reader's units are not the same thing, and serving
 // both from one number is what left the rail speaking a dozen unrelated scales
 // — bare radians beside thousandths beside a specular exponent. SCHEMA below
-// stays entirely in ENGINE units: uniforms, presets, URL state and randomize
-// all read it directly and none of them know this section exists. A `display`
+// stays entirely in ENGINE units: uniforms, presets and URL state all read it
+// directly and none of them know this section exists. A `display`
 // spec is a pure UI overlay that ParamRow converts through on the way in and
 // out, so nothing beneath the UI ever sees a percent.
 //
@@ -21,11 +21,14 @@ export type ParamType = "float" | "int" | "enum";
 //   %   anything bounded and amount-like — integer steps, no decimal point
 //   °   every angle, every hue, and the key light's elevation
 //   ×   true gains, where 1.00 is neutral and above it means more than normal
-//   px  Min Line Px alone, because it really is a screen measurement
 //       (bare) counts of a real thing: lobes, passes, hairlines, fringes
+//
+// There was a `px` unit too, for Min Line Px — the one param measured in
+// screen pixels. That param is gone (hardcoded in the shader), and the unit
+// went with it rather than sit unused.
 // ---------------------------------------------------------------------------
 
-export type Unit = "%" | "°" | "×" | "px" | "";
+export type Unit = "%" | "°" | "×" | "";
 
 // Declarative because the compiled form needs the param's own min/max, which an
 // object literal cannot reference from inside itself. `src/ui/units.ts` turns
@@ -53,8 +56,7 @@ export type DisplaySpec =
   // k = 7 at ~3%. Display 0 still maps to raw min EXACTLY, which is what keeps
   // an off-at-zero param switchable off.
   | { kind: "expoZero"; k: number }
-  | { kind: "multiplier" } // identity, shown with x
-  | { kind: "px" }; // identity, shown with px
+  | { kind: "multiplier" }; // identity, shown with x
 
 export interface Display {
   unit: Unit;
@@ -95,12 +97,13 @@ export interface ParamDef {
 export const GROUP_ORDER: string[] = [
   "Render",
   "Layout",
+  "Layers",
   "Rosette",
   "Spiral",
-  "Layers",
   "Flat",
   "Material",
   "Lighting",
+  "Effects",
 ];
 
 // Folders that only apply in one render mode, keyed by the `shaded` value they
@@ -111,6 +114,7 @@ export const GROUP_SHOW_WHEN: Record<string, number> = {
   Flat: 0, // flat-mode colours
   Material: 1, // lit relief + metal
   Lighting: 1, // lit lighting
+  Effects: 1, // lit-only too: the flat path returns before any of them apply
 };
 
 export const SCHEMA: ParamDef[] = [
@@ -119,11 +123,18 @@ export const SCHEMA: ParamDef[] = [
 
   // --- Layout (coordinate system + cut/line geometry) ---
   { key: "mode", label: "Mode", group: "Layout", type: "enum", min: 0, max: 1, step: 1, default: 0, options: ["Radial", "Linear"], urlKey: "mo" },
+  { key: "scale", label: "Scale", group: "Layout", type: "float", min: 0.25, max: 4, step: 0.01, default: 1, urlKey: "sc", display: { kind: "multiplier" } },
+  { key: "centerX", label: "Pan X", group: "Layout", type: "float", min: -1, max: 1, step: 0.01, default: 0, urlKey: "cx", display: { kind: "fraction" } },
+  { key: "centerY", label: "Pan Y", group: "Layout", type: "float", min: -1, max: 1, step: 0.01, default: 0, urlKey: "cy", display: { kind: "fraction" } },
   { key: "density", label: "Density", group: "Layout", type: "int", min: 6, max: 90, step: 1, default: 28, urlKey: "d" },
   { key: "offset", label: "Offset", group: "Layout", type: "float", min: 0, max: 0.2, step: 0.002, default: 0, urlKey: "of", display: { kind: "percent" } },
   { key: "cutWidth", label: "Cut Width", group: "Layout", type: "float", min: 0.05, max: 1, step: 0.01, default: 0.35, urlKey: "cw", display: { kind: "fraction" } },
-  { key: "cutterMode", label: "Cutter Mode", group: "Layout", type: "enum", min: 0, max: 1, step: 1, default: 1, options: ["Feed-relative", "Fixed cutter"], urlKey: "cm" },
-  { key: "minLinePx", label: "Min Line Px", group: "Layout", type: "float", min: 0, max: 2, step: 0.05, default: 0.75, urlKey: "ml", display: { kind: "px" } },
+  { key: "cutterMode", label: "Cutter", group: "Layout", type: "enum", min: 0, max: 1, step: 1, default: 1, options: ["Relative", "Fixed"], urlKey: "cm" },
+
+  // --- Layers (repeated passes) ---
+  { key: "passes", label: "Passes", group: "Layers", type: "int", min: 1, max: 4, step: 1, default: 1, urlKey: "ps" },
+  { key: "passAngle", label: "Angle", group: "Layers", type: "float", min: 0, max: 1.570796, step: 0.01, default: 0, urlKey: "pa", display: { kind: "radians" } },
+  { key: "passShift", label: "Shift", group: "Layers", type: "float", min: 0, max: 0.08, step: 0.0005, default: 0, urlKey: "pt", display: { kind: "percent" } },
 
   // --- Rosette (the two sinusoidal cams + their shape/taper) ---
   { key: "amp1", label: "Amp 1", group: "Rosette", type: "float", min: 0, max: 0.1, step: 0.002, default: 0.06, urlKey: "a1", display: { kind: "percent" } },
@@ -141,10 +152,6 @@ export const SCHEMA: ParamDef[] = [
   { key: "twistWaveFreq", label: "Spiral Freq", group: "Spiral", type: "float", min: 0, max: 12, step: 0.5, default: 2, urlKey: "wf" },
   { key: "twistWavePhase", label: "Spiral Phase", group: "Spiral", type: "float", min: 0, max: 6.283185, step: 0.01, default: 0, urlKey: "wp", display: { kind: "radians" } },
 
-  // --- Layers (repeated passes) ---
-  { key: "passes", label: "Passes", group: "Layers", type: "int", min: 1, max: 4, step: 1, default: 1, urlKey: "ps" },
-  { key: "passAngle", label: "Angle", group: "Layers", type: "float", min: 0, max: 1.570796, step: 0.01, default: 0, urlKey: "pa", display: { kind: "radians" } },
-  { key: "passShift", label: "Shift", group: "Layers", type: "float", min: 0, max: 0.08, step: 0.0005, default: 0, urlKey: "pt", display: { kind: "percent" } },
 
   // --- Flat (only relevant when Render = Flat) ---
   { key: "invert", label: "Invert", group: "Flat", type: "enum", min: 0, max: 1, step: 1, default: 0, options: ["Light on dark", "Dark on light"], urlKey: "iv" },
@@ -158,20 +165,13 @@ export const SCHEMA: ParamDef[] = [
   { key: "metal", label: "Metal", group: "Material", type: "enum", min: 0, max: 1, step: 1, default: 0, options: ["Silver", "Gold"], urlKey: "mt" },
   { key: "anisotropy", label: "Anisotropy", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0.8, urlKey: "an", display: { kind: "fraction" } },
   { key: "shininess", label: "Shininess", group: "Material", type: "float", min: 8, max: 256, step: 1, default: 80, urlKey: "sn", display: { kind: "expo" } },
-  { key: "specStrength", label: "Spec Strength", group: "Material", type: "float", min: 0, max: 3, step: 0.01, default: 1.0, urlKey: "ss", display: { kind: "multiplier" } },
   { key: "finish", label: "Finish", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0.4, urlKey: "fi", display: { kind: "fraction" } },
   { key: "finishFreq", label: "Finish Freq", group: "Material", type: "int", min: 0, max: 1200, step: 10, default: 320, urlKey: "ff" },
   { key: "iridescence", label: "Iridescence", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "ir", display: { kind: "fraction" } },
-  { key: "spectralPitch", label: "Spectral Pitch", group: "Material", type: "float", min: 0.5, max: 8, step: 0.01, default: 1.6, urlKey: "sp", display: { kind: "multiplier" } },
-  { key: "spectralSat", label: "Spectral Sat", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0.85, urlKey: "st", display: { kind: "fraction" } },
+  { key: "spectralPitch", label: "Rainbow", group: "Material", type: "float", min: 0.5, max: 8, step: 0.01, default: 1.6, urlKey: "sp", display: { kind: "multiplier" } },
+  { key: "spectralSat", label: "Rainbow Sat", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0.85, urlKey: "st", display: { kind: "fraction" } },
   { key: "fringes", label: "Fringes", group: "Material", type: "float", min: 0, max: 8, step: 0.5, default: 3, urlKey: "fr" },
   { key: "glint", label: "Glint", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0.5, urlKey: "gl", display: { kind: "fraction" } },
-  { key: "enamel", label: "Enamel", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "en", display: { kind: "fraction" } },
-  { key: "enamelHue", label: "Enamel Hue", group: "Material", type: "float", min: 0, max: 1, step: 0.001, default: 0.6, urlKey: "eh", display: { kind: "turns" } },
-  { key: "enamelDepth", label: "Enamel Sat", group: "Material", type: "float", min: 0, max: 6, step: 0.01, default: 1.5, urlKey: "ed", display: { kind: "percent" } },
-  { key: "grain", label: "Grain", group: "Material", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "gr", display: { kind: "fraction" } },
-  { key: "grainScale", label: "Grain Scale", group: "Material", type: "int", min: 50, max: 2000, step: 10, default: 600, urlKey: "gs" },
-  { key: "filmGrain", label: "Film Grain", group: "Material", type: "float", min: 0, max: 0.15, step: 0.001, default: 0, urlKey: "fg", display: { kind: "percent" } },
 
   // --- Lighting (only relevant when Render = Lit) ---
   { key: "envStrength", label: "Env Strength", group: "Lighting", type: "float", min: 0, max: 2, step: 0.01, default: 0.7, urlKey: "es", display: { kind: "multiplier" } },
@@ -181,6 +181,15 @@ export const SCHEMA: ParamDef[] = [
   { key: "keyStrength", label: "Key Strength", group: "Lighting", type: "float", min: 0, max: 2, step: 0.01, default: 1, urlKey: "ks", display: { kind: "multiplier" } },
   { key: "lightHue", label: "Light Hue", group: "Lighting", type: "float", min: 0, max: 1, step: 0.01, default: 0.1, urlKey: "lu", display: { kind: "turns" } },
   { key: "lightSat", label: "Light Sat", group: "Lighting", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "la", display: { kind: "fraction" } },
+
+  // --- Effects (layers over the finished plate, applied after the metal is
+  // shaded and lit; Render = Lit only, like Material and Lighting) ---
+  { key: "enamel", label: "Enamel", group: "Effects", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "en", display: { kind: "fraction" } },
+  { key: "enamelHue", label: "Enamel Hue", group: "Effects", type: "float", min: 0, max: 1, step: 0.001, default: 0.6, urlKey: "eh", display: { kind: "turns" } },
+  { key: "enamelDepth", label: "Enamel Sat", group: "Effects", type: "float", min: 0, max: 6, step: 0.01, default: 1.5, urlKey: "ed", display: { kind: "percent" } },
+  { key: "grain", label: "Grain", group: "Effects", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "gr", display: { kind: "fraction" } },
+  { key: "grainScale", label: "Grain Scale", group: "Effects", type: "int", min: 50, max: 2000, step: 10, default: 600, urlKey: "gs" },
+  { key: "filmGrain", label: "Film Grain", group: "Effects", type: "float", min: 0, max: 0.15, step: 0.001, default: 0, urlKey: "fg", display: { kind: "percent" } },
 ];
 
 // Defaults object derived from SCHEMA (used by params + Reset).

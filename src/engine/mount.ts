@@ -20,8 +20,9 @@ export interface MountOptions {
   // false disables pointer/gyro aiming entirely — the key light keeps its
   // default azimuth and the canvas never redraws on pointer move.
   interactive?: boolean;
-  // Where pointer aiming is sourced from. Defaults to element scope, which is
-  // the safe choice for an embed; the standalone app opts into window scope.
+  // Where pointer aiming is sourced from. Defaults to window scope so the
+  // light keeps tracking when something is layered over the canvas, and to
+  // holding the last aim rather than resetting when the pointer is lost.
   pointer?: PointerInputOptions;
   maxDpr?: number;
   // Element whose box normalizes pointer coords, and which element-scoped
@@ -73,7 +74,7 @@ export function mountGuilloche(
         engine.setPointer(x, y);
         onAim?.(x, y);
       },
-      { scope: "element", resetOnLeave: true, gyro: false, ...pointer, onGyroState },
+      { scope: "window", resetOnLeave: false, gyro: false, ...pointer, onGyroState },
     );
   }
 

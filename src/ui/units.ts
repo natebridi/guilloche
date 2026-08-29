@@ -121,8 +121,6 @@ function compileDisplay(d: ParamDef): Display {
     }
     case "multiplier":
       return identity(d, "×");
-    case "px":
-      return identity(d, "px");
     default:
       return identity(d, "");
   }

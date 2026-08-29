@@ -27,14 +27,22 @@ export type GyroState = "unsupported" | "insecure" | "prompt" | "granted" | "den
 
 export interface PointerInputOptions {
   // "window": track the pointer anywhere on the page, normalized to `target`'s
-  // box (right for the standalone app, where the plate is the whole subject).
-  // "element": only track while the pointer is over `target` — required for an
-  // embed, which has no business observing the host page's pointer.
+  // box and clamped to the unit disc. This is the default, including for
+  // embeds:
+  // `pointermove` bubbles, so element scope stops aiming the moment anything
+  // is layered OVER the plate — a caption, a button, a scrim — which reads as
+  // the light snapping away for no reason the viewer can see.
+  // "element": only aim while the pointer is directly over `target`. Still
+  // available for a host that would rather the widget not observe pointer
+  // movement across the rest of its page.
   scope?: "window" | "element";
   // Gyro is opt-in for embeds: on iOS the permission prompt is triggered by a
   // tap, and firing that on someone else's page from a widget is hostile.
   gyro?: boolean;
   // Spring back to neutral when the pointer leaves (element scope only).
+  // Defaults to FALSE: losing the pointer is not information about where the
+  // light should be, so the aim holds its last value instead of jumping to the
+  // default azimuth. Opt in for a widget that should visibly rest when idle.
   resetOnLeave?: boolean;
   // Notified whenever the gyro state changes, including once on attach.
   onGyroState?: (state: GyroState) => void;
@@ -52,8 +60,6 @@ export interface PointerInputHandle {
   requestGyro(): Promise<GyroState>;
   gyroState(): GyroState;
 }
-
-const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 
 interface DOEStatic {
   requestPermission?: () => Promise<"granted" | "denied" | "default">;
@@ -74,8 +80,27 @@ export function attachPointerInput(
 
   const onMove = (e: PointerEvent) => {
     const r = target.getBoundingClientRect();
-    const x = clamp1((e.clientX - r.left - r.width / 2) / (r.width / 2));
-    const y = clamp1(-(e.clientY - r.top - r.height / 2) / (r.height / 2)); // up-positive
+    // ONE divisor for both axes, so the aim's DIRECTION is independent of the
+    // target's size and aspect ratio. Dividing x by w/2 and y by h/2 skews the
+    // bearing on any non-square element, and skews it differently for each
+    // size — so two plates sharing a centre disagree about where the light is,
+    // which is exactly the failure when patterns are layered.
+    const s = Math.min(r.width, r.height) / 2;
+    if (s <= 0) return; // not laid out / zero-sized
+    let x = (e.clientX - r.left - r.width / 2) / s;
+    let y = -(e.clientY - r.top - r.height / 2) / s; // up-positive
+    // RADIAL clamp, never per-axis. Clamping x and y independently pins the
+    // aim to a SQUARE: as soon as the pointer is outside the target's box
+    // diagonally, both components saturate and the direction locks to exactly
+    // 45deg, so the light freezes everywhere except the element's horizontal
+    // and vertical bands. Clamping the magnitude keeps the true bearing from
+    // anywhere on the page while still bounding the signal to the unit disc
+    // for consumers that read it as a displacement (the app's CSS tilt).
+    const len = Math.hypot(x, y);
+    if (len > 1) {
+      x /= len;
+      y /= len;
+    }
     onAim(x, y);
   };
   const source: Window | HTMLElement = scope === "window" ? window : target;

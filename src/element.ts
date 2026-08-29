@@ -131,7 +131,7 @@ function buildClass(): CustomElementConstructor {
       this.setAttribute("params", v);
     }
     get interactive(): string {
-      return this.getAttribute("interactive") ?? "hover";
+      return this.getAttribute("interactive") ?? "track";
     }
     set interactive(v: string) {
       this.setAttribute("interactive", v);
@@ -186,16 +186,29 @@ function buildClass(): CustomElementConstructor {
 
     #mount() {
       if (this.#handle || !this.#visible) return;
-      const mode = (this.getAttribute("interactive") ?? "hover").toLowerCase();
+      const mode = (this.getAttribute("interactive") ?? "track").toLowerCase();
       const maxDprAttr = Number(this.getAttribute("max-dpr"));
 
       try {
         this.#handle = mountGuilloche(this.#canvas, {
           params: this.#params(),
           interactive: mode !== "off",
-          // Element-scoped by default; "gyro" opts into device orientation,
-          // which on iOS means a permission prompt, so it is never implicit.
-          pointer: { scope: "element", resetOnLeave: true, gyro: mode === "gyro" },
+          // "track" (the default) aims from anywhere on the page; element
+          // scope stopped aiming as soon as anything was layered over the
+          // plate, which read as the light snapping away for no visible
+          // reason. "hover" keeps the old element-scoped behaviour for a host
+          // that would rather this widget not watch the whole page.
+          //
+          // The aim always HOLDS its last value when the pointer is lost —
+          // losing the pointer says nothing about where the light should be.
+          //
+          // "gyro" opts into device orientation, which on iOS means a
+          // permission prompt, so it is never implicit.
+          pointer: {
+            scope: mode === "hover" ? "element" : "window",
+            resetOnLeave: false,
+            gyro: mode === "gyro",
+          },
           pointerTarget: this,
           maxDpr: Number.isFinite(maxDprAttr) && maxDprAttr > 0 ? maxDprAttr : undefined,
           onGyroState: (state) => this.#onGyroState(state),

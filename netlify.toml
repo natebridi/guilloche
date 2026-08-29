@@ -1,6 +1,5 @@
-# Netlify deploy config for the editor app.
-# Vercel needs no config file — it auto-detects Vite (build: `npm run build`,
-# output: `dist`). This file is only read by Netlify.
+# Netlify deploy config. Vercel needs no config file — it auto-detects Vite
+# (build: `npm run build`, output: `dist`). This file is only read by Netlify.
 
 [build]
   command = "npm run build"
@@ -9,8 +8,16 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# The app has no client-side router — state lives in the query string — so no
-# SPA redirect rules are needed.
+# Two static routes, and neither needs a rule: Vite emits dist/index.html and
+# dist/create/index.html, and Netlify resolves /create to /create/index.html on
+# its own. There is no client-side router anywhere — the editor's state lives
+# in the query string, so /create?v1=... is a plain document request.
+
+# The embed demo used to live here before it became the landing page.
+[[redirects]]
+  from = "/demo/embed.html"
+  to = "/"
+  status = 301
 
 # Hashed asset filenames are content-addressed and safe to cache forever.
 [[headers]]

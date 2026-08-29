@@ -74,14 +74,11 @@ export function Stage({ engineRef, initialParams, params }: StageProps) {
     engineRef.current = handle.engine;
     handleRef.current = handle;
 
-    // Spring the tilt back to flat when the pointer leaves the page.
-    const onDocLeave = () => {
-      if (frameRef.current) frameRef.current.style.transform = "";
-    };
-    document.addEventListener("mouseleave", onDocLeave);
-
+    // The tilt deliberately HOLDS when the pointer leaves the page, matching
+    // the key light: both are driven by the same aim signal, and losing the
+    // pointer says nothing about where the plate should be facing. Springing
+    // only the tilt back left the two visibly disagreeing.
     return () => {
-      document.removeEventListener("mouseleave", onDocLeave);
       handle.destroy();
       engineRef.current = null;
       handleRef.current = null;

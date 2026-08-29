@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { GuillocheEngine } from "../engine/GuillocheEngine";
 import { schemaDefaults } from "../schema";
 import { decode, encode } from "../urlState";
-import { randomizePatch } from "../randomize";
 import { presetParams, type Preset } from "../presets";
 import { embedSnippet } from "../embedSnippet";
 import { Stage } from "./Stage";
@@ -57,16 +56,6 @@ export function App() {
     [applyPatch],
   );
 
-  const onRandomize = useCallback(() => {
-    setActivePreset(null);
-    applyPatch(randomizePatch(params));
-  }, [applyPatch, params]);
-
-  const onReset = useCallback(() => {
-    setActivePreset(null);
-    applyPatch(schemaDefaults());
-  }, [applyPatch]);
-
   // Debounced URL sync (300ms). Skip the first run so we don't rewrite the URL
   // just from loading.
   const firstRun = useRef(true);
@@ -107,8 +96,6 @@ export function App() {
         activePreset={activePreset}
         onChange={onChange}
         onPreset={onPreset}
-        onRandomize={onRandomize}
-        onReset={onReset}
         onCopyLink={copyLink}
         onCopyEmbed={copyEmbed}
       />

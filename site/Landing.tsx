@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Grid, Stack, Typography, Adorn, CodeBlock } from "@jig-ui/react";
+import { Grid, Stack, Button, Typography, Adorn, CodeBlock, ToggleButton, ToggleButtonGroup, Box, Link } from "@jig-ui/react";
 import { color } from "@jig-ui/react/tokens";
 import { Diagnostics } from "./Diagnostics";
 
@@ -35,9 +35,47 @@ function Sample({ label, params, ...rest }: { label: string; params: string } & 
   );
 }
 
-export function EmbedDemo() {
+export function Landing() {
   return (
-    <Stack as="main" className="page" direction="column" spacing="900">
+    <Stack as="main" direction="column" spacing="900">
+
+      <Stack style={{ minHeight: '60vh', width: '100vw' }} justify='center'>
+
+        <Grid columns={24} style={{  maxWidth: '60rem', marginInline: 'auto' }}>
+          <Box span={{ xs: 24, md: 8 }} alignSelf='center' mb="600" style={{ zIndex: 3 }}>
+            <Typography as="h1" with="display01" mb="300">Guilloche</Typography>
+            <Typography as="p" with="display05" pl="300" balance>Shader for patterns etched in metal</Typography>
+            <Box mt="600" pl="300">
+              <Link variant="smoke" icon="arrow-right" iconPosition="end" href="/create">Create your guilloché</Link>
+            </Box>
+          </Box>
+          <Stack spacing="500" py="600" align="center" span={{ xs: 24, md: 16 }} style={{ zIndex: 2 }}>
+            <Box style={{
+              overflow: 'hidden',
+              position: 'relative',
+              borderRadius: '1rem',
+              aspectRatio: '5/3',
+              width: '30rem',
+              placeContent: 'center'
+            }}>
+              <guilloche-pattern style={{ position: 'absolute', inset: 0, aspectRatio: '5/3' }} params="v1&pr=sunburst" />
+              <guilloche-pattern style={{ position: 'absolute', width: '30%', borderRadius: 999, placeSelf: 'center' }} params="v1&amp;d=24&amp;pa=0.575959&amp;pt=0.08&amp;a1=0&amp;f1=35&amp;a2=0&amp;at=0.4&amp;tw=3&amp;wa=1.52&amp;wf=4.5&amp;mt=1&amp;ir=1&amp;sp=3.72&amp;ks=1.35&amp;lu=0.197222&amp;la=1&amp;en=0.25&amp;eh=0.088889&amp;ed=6&amp;fg=0.15" />
+            </Box>
+            <ToggleButtonGroup>
+              <ToggleButton value="style1" pressedIcon='eye'>Golden sun</ToggleButton>
+              <ToggleButton value="style2" pressedIcon='eye'>Silver burst</ToggleButton>
+              <ToggleButton value="style3" pressedIcon='eye'>Ocean drop</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+        </Grid>
+
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+          <guilloche-pattern style={{ width: '100%', height: '100%' }} params="v1&pr=black-card" />
+        </div>
+
+      </Stack>
+
+
       <Stack direction="column" spacing="300">
         <Typography as="h1" with="display01">
           Guilloche
@@ -111,11 +149,16 @@ export function EmbedDemo() {
         <CodeBlock>{`params       Editor share-link string. Reactive — change it and the
              pattern updates in place. Unset params fall back to defaults.
 
-interactive  "hover"  the pointer aims the key light while over the
-                      element (default)
+interactive  "track"  the pointer aims the key light from anywhere on
+                      the page, so it keeps aiming when something is
+                      layered over the plate (default)
+             "hover"  only aim while the pointer is over the element
              "off"    static; no listeners at all
-             "gyro"   hover, plus device orientation. Needs HTTPS, and
+             "gyro"   track, plus device orientation. Needs HTTPS, and
                       renders an "Enable motion" button on iOS.
+
+             The aim holds its last value whenever the pointer is
+             lost — it never snaps back to the default azimuth.
 
 max-dpr      Cap on devicePixelRatio. Default 2. Lower it for large
              embeds — the shader is expensive per-pixel.`}</CodeBlock>

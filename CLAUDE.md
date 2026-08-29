@@ -41,11 +41,51 @@ ResizeObserver + DPR watching + input wiring, with no framework. Both
 that belongs to one shell (the app's CSS tilt, the caption) stays in that
 shell. **Fix rendering/lifecycle bugs in `mount.ts`, not in either shell.**
 
-Embed-specific defaults differ from the app's on purpose: element-scoped
-pointer (not window), gyro off (the iOS permission prompt is hostile on
-someone else's page), lazy GL context via IntersectionObserver, and a real
-`engine.destroy()` that calls `loseContext()` — browsers cap live contexts
-per page.
+Embed-specific defaults differ from the app's on purpose: gyro off (the iOS
+permission prompt is hostile on someone else's page), lazy GL context via
+IntersectionObserver, and a real `engine.destroy()` that calls
+`loseContext()` — browsers cap live contexts per page.
+
+**Pointer scope is window, and the aim HOLDS when the pointer is lost.** Both
+were originally the other way round for embeds, and both were wrong:
+
+- `pointermove` bubbles, so ELEMENT scope stops aiming the instant anything is
+  layered over the plate — a caption, a button, a scrim. The light freezes for
+  a reason the viewer cannot see. Window scope normalizes the pointer against
+  the target's box, so aiming continues from anywhere on the page.
+  `interactive="hover"` still opts back into element scope for a host that
+  would rather the widget not observe pointer movement across its page.
+- `resetOnLeave: true` snapped the light back to its default azimuth whenever
+  the pointer left. Losing the pointer is not information about where the light
+  should be, so the aim now holds its last value. The option survives for a
+  consumer of the programmatic API who wants a widget that visibly rests.
+
+**The aim is normalized by ONE divisor and clamped RADIALLY, and both halves
+of that matter for layering.** Window scope alone does not make aiming work off
+the plate; the original normalization broke it twice over:
+
+- Per-axis clamping (`clamp1(x)`, `clamp1(y)`) pins the aim to a SQUARE. The
+  shader only reads `normalize(u_mouse)`, so once the pointer is outside the
+  target's box DIAGONALLY both components saturate and the direction locks at
+  exactly 45 degrees — the light is live in the element's horizontal and
+  vertical bands and frozen everywhere else. Clamping `hypot(x, y)` to 1
+  instead keeps the true bearing from any point on the page and still bounds
+  the signal for consumers that read it as a displacement (the app's CSS tilt).
+- Dividing `x` by `w/2` and `y` by `h/2` makes the aim's DIRECTION depend on
+  the target's size and aspect ratio. Two plates sharing a centre then disagree
+  about where the light is, which is what makes layered patterns look wrong.
+  Both axes now divide by `min(w, h) / 2`; a common scalar cancels out of
+  `atan2`, so the bearing is size- and aspect-independent and concentric layers
+  agree exactly. Non-concentric layers still differ by parallax, which is
+  honest for a light near the page — making a montage of separate plates read
+  as ONE distant light would need a shared normalization origin, which does not
+  exist yet.
+
+One related quirk is NOT fixed and is worth knowing: the shader falls back to
+the default azimuth whenever `length(u_mouse) < 1e-4`, so an aim of exactly
+(0, 0) — the pointer at the dead centre of the element — reads as "no input"
+and flicks the light to its default. It is brief and only on the exact centre
+pixel, but it is the same snap by a different route.
 
 `src/element.ts` builds its class inside a factory rather than at module
 scope, because `class X extends HTMLElement` evaluates `HTMLElement` at
@@ -73,12 +113,40 @@ from "the feature is broken":
 Testing gyro therefore needs an HTTPS tunnel or a deployed preview; a LAN dev
 server cannot work regardless of the code.
 
-**The repo is a Vite multi-page app.** `vite.config.ts` declares two entries:
-`index.html` (editor) and `demo/embed.html` (the embed demo/docs page). The
-demo was previously a plain static HTML file, which meant Vite served it
-verbatim and bare specifiers could not resolve — making it a real entry is what
-allows it to import from node_modules. Both the demo and the editor use the
-`@jig-ui/react` design system.
+**The repo is a Vite multi-page app, and ROUTING IS THE FILE LAYOUT.** Vite
+mirrors each entry's path relative to the project root into `dist`, so an HTML
+file's location IS its URL. Two routes:
+
+| route     | entry               | source   | what it is                     |
+| --------- | ------------------- | -------- | ------------------------------ |
+| `/`       | `index.html`        | `site/`  | landing page + documentation   |
+| `/create` | `create/index.html` | `src/ui/`| the pattern editor             |
+
+The editor lives in a `create/` directory holding a single file rather than at
+`create.html`, because the latter would only ever serve at `/create.html`.
+Static hosts resolve `/create` → `/create/index.html` themselves, so there is
+no redirect rule in `netlify.toml` for it.
+
+Two things this arrangement needs, both easy to lose:
+
+- **`appType: "mpa"`.** Vite's dev server defaults to SPA mode and falls back
+  to the ROOT `index.html` for any unmatched path — so `/create` would silently
+  serve the LANDING page and the editor would be unreachable in dev while
+  working perfectly in production. `mpa` turns the fallback off.
+- **The `guilloche:clean-urls` dev plugin.** Even under `mpa`, Vite only
+  resolves the trailing-slash form, so `/create` 404s locally while
+  `/create/` works — again a dev-only divergence from the deployed site. The
+  plugin rewrites any extensionless path with a matching `<path>/index.html`,
+  which is exactly what Netlify does. It is generic, so a future route needs no
+  change to it.
+
+Being real entries is also what lets each page resolve bare specifiers like
+`@jig-ui/react` from node_modules; the landing page was once a plain static
+file served verbatim, where that could not work. Both pages use Jig.
+
+The editor's share links are unaffected by living at `/create`: `App.tsx`
+builds them from `location.pathname`, so they became `/create?v1=...` on their
+own.
 
 **Jig may be imported from `src/ui/`, and NOWHERE else in `src/`.** The editor
 is a static build that is never published, so a devDependency is the right
@@ -94,8 +162,9 @@ control *skins*: sliders, steppers, buttons and segmented pickers are Jig
 components, and styles.css only places them. Two hooks make that work, both
 documented at their site in the CSS:
 
-- `index.html` carries `data-theme="dark"`, which is how Jig picks its token
-  set; the editor is dark-only.
+- `create/index.html` carries `data-theme="dark"`, which is how Jig picks its
+  token set; the editor is dark-only. The landing page deliberately does not,
+  so it follows `prefers-color-scheme`.
 - Jig ships its CSS in `@layer jig.*`, so the editor's unlayered rules always
   win — no specificity fights. Brand colour is restated by remapping a handful
   of Jig's semantic tokens on `.app` (they inherit down to every control)
@@ -111,11 +180,15 @@ which lands on values like `0.30000000000000004` where the native range input
 returned an exact decimal — `controls.tsx` re-quantizes, because `urlState.
 encode()` writes numbers verbatim and compares them against `default`.
 
-The demo imports the element from SOURCE (`../src/embed`), not from
+The landing page imports the element from SOURCE (`../src/embed`), not from
 `dist-embed/`, so it has HMR and needs no prior `build:embed`. JSX typing for
-`<guilloche-pattern>` lives in `demo/jsx.d.ts` rather than `src/element.ts`,
+`<guilloche-pattern>` lives in `site/jsx.d.ts` rather than `src/element.ts`,
 deliberately: the package is framework-agnostic and must not push a global
 React JSX augmentation onto consumers.
+
+`site/` sits OUTSIDE `src/` on purpose: `src/` is the product (and the source
+of the published package), `site/` is the website about it. That boundary is
+why the Jig rule below can be stated in terms of `src/ui/` alone.
 
 The URL format doubles as the embed config format: `params="v1&pr=net"` on the
 element runs through the same `decode()` as a share link. `src/embedSnippet.ts`
@@ -125,7 +198,7 @@ never `@latest`).
 ## Display units (UI-only, post-TASK-9)
 
 **SCHEMA is in ENGINE units and always will be.** Uniforms, `urlState`,
-`presets.ts` and `randomize.ts` all read it directly and none of them know the
+`presets.ts` all read it directly and none of them know the
 display layer exists. What the user reads is a pure UI overlay: an optional
 `display: DisplaySpec` on each `ParamDef`, compiled once by `compileDisplay()`
 into a `Display` that `ParamRow` converts through on the way in and out. The
@@ -147,10 +220,14 @@ param goes:
   turns so x360 is exact), and the key light's `elevation`.
 - `×` — true gains only, where 1.00 is neutral. Deliberately NOT percent: 300%
   would read as past-the-maximum, which is the opposite of what it means.
-- `px` — Min Line Px alone, because it really is a screen measurement. The
-  visible unit is what earns it the right to a decimal.
 - (bare) — counts of a real thing: lobes, passes, hairlines, fringes, and
   Twist, which is turns of phase per unit coord. Omitting `display` means this.
+
+There was a fifth unit, `px`, for Min Line Px — the one param measured in
+screen pixels. That param is now hardcoded in the shader, and the unit was
+deleted with it rather than left unused. Reintroducing it is one `DisplaySpec`
+variant plus one `identity(d, "px")` case if a genuinely pixel-measured param
+ever appears.
 
 Three maps are deliberately NON-linear, and all three are worth keeping:
 
@@ -178,11 +255,20 @@ Three maps are deliberately NON-linear, and all three are worth keeping:
   It uses `expm1`/`log1p` rather than `exp`/`log` to hold precision at the
   shallow bottom of the curve.
 
+Scale is a `multiplier` (linear travel, `×` readout) rather than a log-spaced
+slider, and that is a constraint rather than a preference: the Display contract
+runs the SLIDER in display units, so a log map has to expose 0-100 travel AS
+the display value — which is exactly why `expo` reads as a percent. A `×`
+readout and log-spaced stops are mutually exclusive under the current design.
+`relief` and `exposure` already make the same trade, so 1.00 sitting a fifth of
+the way along the travel is at least consistent.
+
 The Shininess and Light Height defaults are consequently the only two that
 don't sit exactly on a display stop (80 shows 66%, 0.4 shows 22°). Harmless:
 it only means dragging to the shown value lands a hair off the stored default.
-Amp Taper's default of 0 is exact. `randomize.ts` samples in raw units and is
-unaffected — it touches none of the three.
+Amp Taper's default of 0 is exact. (`randomize.ts` sampled in raw units and
+was unaffected by all three; it has since been deleted along with the
+Randomize button.)
 
 `quantize()` rounds a transform's output to one part in a million of the
 param's range. That is fine enough to be invisible and coarse enough to keep
@@ -247,6 +333,36 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   tears/folds lines at high `twistWaveAmp × twistWaveFreq` (an accepted
   expressive tradeoff, not a bug). `twAmp` is used identically in both
   `phaseField` and `phaseGradient`, so flat/lit stay consistent.
+- **scale** / **centerX** / **centerY** — the viewport into the pattern.
+  `main()` builds TWO points: `pPlate`, the element's own box ([-0.5, 0.5]
+  across the short axis, exactly what `p` used to be), and `p = (pPlate -
+  vec2(centerX, centerY)) / scale`, which every pattern-derived quantity reads,
+  so lobes, pitch, the central hole, the taper radius and the tool grain all
+  scale together — magnifying the engraving rather than making it finer. Pan is
+  applied BEFORE the divide, so zoom magnifies ABOUT the panned origin instead
+  of sweeping it across the plate as `scale` changes. `centerX = 1` moves the
+  pattern origin one full short-side length to the right.
+
+  Two things this deliberately does NOT do:
+
+  - **No chain rule on the gradients.** `phaseGradient` stays in pattern space,
+    so wall slopes are unchanged by zoom. Slope is intrinsic to the geometry —
+    a real engraving seen larger has the same slopes — and dividing by `scale`
+    would visibly flatten the lighting as you zoom in. Screen-space AA is
+    correct either way, since `fwidth` differentiates whatever is displayed.
+  - **Plate-scoped effects stay on `pPlate`:** the flat vignette, and the
+    turned finish's rim fade (`edgeFade`). Both describe the element, not the
+    engraving, so feeding them `p` would pull a rim shadow into the middle of
+    the canvas at `scale < 1`. The finish's HAIRLINES do read `p` — they are
+    concentric with the rosette, so they must pan and zoom with it or the plate
+    shows two different centres.
+
+  Linear mode's origin has to move with both, which is why `linearOrigin()`
+  exists: `(cornerRadius + length(center)) / scale + 0.5`, shared by
+  `phaseField` and `phaseGradient` because the two MUST agree exactly. Drop
+  either term and zooming out or panning far enough brings the `coord < 0`
+  boundary back on-screen and re-masks part of the plate. At `scale: 1` with no
+  pan it is the original constant, so defaults are byte-identical.
 - **Offset** — subtracted from coord before displacement; where coord < 0 the
   inner mask empties the pattern. In RADIAL this is the central hole. In LINEAR
   the origin is now shifted past the far corner (`coord = 0.5·length(u_res)/
@@ -263,8 +379,12 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   sits exactly on it (which used to cut a line in half lengthwise into a
   persistent ring).
 - **cutWidth** — line width as a fraction of the local pitch (0..1]; replaced
-  the old fixed-px `lineWidth`. **minLinePx** is a legibility floor (in px, via
-  screen-space `fwidth`) so thin cuts never fully disappear.
+  the old fixed-px `lineWidth`. A legibility floor keeps thin cuts from
+  disappearing entirely: `MIN_LINE_PX` in `lineMask` holds a cut to at least
+  one screen pixel (in phase units, via screen-space `fwidth`). It was the
+  `minLinePx` PARAM until it was hardcoded to 1.0 — it applied only to the
+  flat path (`lineMask`; the lit loop builds its own geometry) and the visible
+  difference across its whole 0–2px range did not earn a slider.
 - **waveShape** — shapes the rosette/harmonic wave from sine (~0.001) toward
   square/scalloped (higher values) via `tanh`-shaped `waveFn`.
 - **passAngle** / **passShift** — per-pass field rotation / coord advance, and
@@ -295,8 +415,25 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   `waveFnDeriv`), never a screen-space derivative — `dFdx`/`dFdy` may only
   appear inside `fwidth` for AA, never for shading, or the surface will look
   noisy/speckled instead of smoothly lit.
-- **anisotropy** / **shininess** / **specStrength** (Task 5) — Kajiya-Kay
-  specular blend, exponent, and strength. The groove tangent is built from
+- **anisotropy** / **shininess** (Task 5) — Kajiya-Kay specular blend and
+  exponent. A third knob, `specStrength`, was a linear gain on `spec`; it was
+  REMOVED as redundant. `spec` is already multiplied by `lightCol`
+  (= `keyStrength`), so the two entered the specular term as a plain product
+  and only that product was ever observable. The one thing `keyStrength` does
+  that `specStrength` did not is carry the diffuse term with it, and diffuse is
+  weighted `0.12` against specular's `0.25` over a metal base that barely
+  diffuses — not enough to justify a second slider.
+
+  `shininess` is NOT redundant with either: it is the EXPONENT, so it sets the
+  highlight's SIZE rather than its brightness, and it is read in two further
+  places — the turned-finish `sheen` and the glint's `edgeSpec` (at `2x`).
+  Neither is reachable any other way.
+
+  Nor is `exposure`: it is the only GLOBAL gain (diffuse + env + spec +
+  spectral + glint + enamel) and it feeds the ACES curve, so it changes
+  contrast and highlight rolloff, not just level. `specStrength` scaled one of
+  the three terms, which RAISED contrast; `exposure` raises everything and then
+  compresses. The groove tangent is built from
   the winning pass's world-space `phaseGradient` (perpendicular to it, then
   Gram-Schmidt'd onto the surface normal); on uncut land this defaults to an
   arbitrary nonzero direction (`vec2(1.0, 0.0)`) purely so `normalize()`
@@ -450,6 +587,45 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   in the UI (it reads as color saturation; internal key/uniform keep the
   `enamelDepth` name, and its range stays 0.2–4 rather than 0–1).
 
+## Rail chrome that was removed
+
+The **Randomize** and **Reset** buttons and the `.rail-footer` that held them
+are gone, and `src/randomize.ts` went with them — it had exactly one consumer
+and was never part of the published API (`src/index.ts` never exported it,
+`tsconfig.embed.json` never included it). Reset is not much of a loss with the
+preset gallery one click away; Randomize would need rebuilding from scratch if
+it comes back, and its old distribution is recoverable from git.
+
+The stage's card tilt no longer springs flat when the pointer leaves the page.
+The tilt and the key light are driven by the SAME aim signal, so resetting only
+the tilt left the two visibly disagreeing once the light started holding its
+last value. Both now hold.
+
+## Panel grouping
+
+`group` on a `ParamDef` is a free-form string; `GROUP_ORDER` sets the folder
+order and `GROUP_SHOW_WHEN` hides folders that don't apply to the current
+render mode. Adding or renaming a folder is a data edit in `src/schema.ts` and
+nothing else — no code knows a group name.
+
+Current order, which reads as the pipeline: **Render, Layout, Layers, Rosette,
+Spiral, Flat, Material, Lighting, Effects.**
+
+**Effects** was split out of Material because Material had grown to 20 entries
+and was doing several unrelated jobs at once. It holds the layers laid over the
+plate AFTER the metal is shaded and lit — the enamel coat (`enamel`,
+`enamelHue`, `enamelDepth`) and the grain (`grain`, `grainScale`, `filmGrain`).
+`GROUP_SHOW_WHEN` marks it lit-only like Material and Lighting, which is
+correct for all six: the flat path returns from `main()` well before any of
+them is reached, `filmGrain` included.
+
+What deliberately stayed in Material is the diffraction set (`iridescence`,
+`spectralPitch`, `spectralSat`, `fringes`, `glint`). Those are not overlays —
+they come out of the grating geometry of the cuts themselves, so they belong
+with the metal rather than on top of it. Material is still the biggest folder
+at 14; the reflectance block (`anisotropy`/`shininess`/`specStrength`/`finish`/
+`finishFreq`) is the obvious next split if it needs one.
+
 ## Status
 
 - DONE: TASK 1 (scaffold), TASK 2 (pattern field), TASK 2.5 (revised pattern
@@ -542,7 +718,8 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   Enamel/Environment/Texture folders into Pattern/Material/Lighting; later
   reworked the grouping to Render/Layout/Rosette/Spiral/Layers/Flat/Material/
   Lighting with `group` as a free-form string and `GROUP_SHOW_WHEN` hiding the
-  Flat vs Material/Lighting folders by render mode),
+  Flat vs Material/Lighting folders by render mode; an **Effects** folder was
+  split out of Material later — see below),
   TASK 8 (React editor — added react/react-dom + `@vitejs/plugin-react`,
   deleted `devPanel.ts`/`main.ts`/`params.ts` and tweakpane; entry is now
   `src/main.tsx` → `src/ui/App.tsx`. `GuillocheEngine` is framework-agnostic:
@@ -562,9 +739,10 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   preset resets unlisted params first; a dev-only validator rejects unknown
   keys, out-of-range values, and duplicate ids. Presets render as a sticky
   pill row at the TOP of the rail with "Copy link" beside them (removed from
-  the footer, which keeps Randomize/Reset). `activePreset` lives in `App` as
+  the footer). `activePreset` lives in `App` as
   explicit event state — set on preset click, cleared by any manual edit /
-  Randomize / Reset — rather than derived by comparing params, so an edit that
+  Randomize / Reset (both since removed) — rather than derived by comparing
+  params, so an edit that
   lands back on a preset value doesn't re-light the pill. `urlState.encode`
   takes an optional preset id and writes `pr=<id>` alongside the params;
   `decode` now returns `{params, preset}`, validates `pr` against PRESETS, and
@@ -589,6 +767,9 @@ value outside its schema range. Mapped as follows rather than stalling:
    `cutWidth` was rejected as the target because it's a FRACTION of pitch, so
    `cutWidth: 1.0` would mean cuts filling the entire pitch (solid fill) —
    the opposite of the fine hairline these presets want.
+   SUPERSEDED: `minLinePx` was later removed and hardcoded to 1.0, so all
+   three presets simply dropped the key. Net and Barleycorn already set 1.0
+   and are unchanged; Moiré Bloom's 0.8 became 1.0.
 2. **`metal: 2` → `shaded: 0, invert: 1`** (Certificate). The `2 = ink`
    material was removed as redundant with flat mode, and this pairing is its
    documented replacement (dark lines on a light paper plate).
