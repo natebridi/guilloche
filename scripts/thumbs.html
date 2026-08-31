@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>guilloche thumbnail generator</title>
+    <style>
+      html, body { margin: 0; background: #000; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Dev-only generator surface for scripts/thumbs.mjs. This file is NOT a
+      route: vite.config.ts lists its entries explicitly (landing + create), so
+      the production build never sees it. The dev server serves it because Vite
+      serves any file under the project root, which is exactly what we want —
+      real TS, real shader imports, no separate build step.
+    -->
+    <script type="module" src="./thumbs.page.ts"></script>
+  </body>
+</html>

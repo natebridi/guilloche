@@ -15,4 +15,5 @@ export const FRAMES: FrameDef[] = [
   { id: "full", label: "Full", className: "frame-full" },
   { id: "card", label: "Card", className: "frame-card", tilt: true },
   { id: "circle", label: "Circle", className: "frame-circle" },
+  { id: "thumb", label: "Thumb", className: "frame-thumb" },
 ];

@@ -10,6 +10,11 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
 export default defineConfig({
+  // The app's public/ holds generated preset thumbnails for the editor's
+  // gallery. Vite would copy it into every build's outDir, which would ship
+  // them inside the published npm package — `files` includes dist-embed
+  // wholesale. The library build has no static assets at all by design.
+  publicDir: false,
   build: {
     outDir: "dist-embed",
     emptyOutDir: true,

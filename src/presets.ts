@@ -10,12 +10,32 @@
 
 import { SCHEMA, schemaDefaults } from "./schema";
 
+// How the preset is FRAMED in its gallery thumbnail. Catalog metadata, not
+// part of the pattern: it is deliberately outside `values` so it can never
+// reach what clicking the preset loads. Only scripts/thumbs.page.ts reads it.
+//
+// It exists because a whole plate shrunk to 320px is the wrong picture for
+// half the gallery. Some presets are identified by their SILHOUETTE — the lobe
+// count, the ring structure — and want the full plate. Others are identified
+// by TEXTURE, and read far better zoomed onto a characteristic patch, where
+// the cut geometry is above the pixel grid instead of dissolving into it.
+export interface ThumbSpec {
+  scale?: number; // as the `scale` param: >1 zooms in
+  centerX?: number; // as `centerX`/`centerY`: which patch to zoom onto
+  centerY?: number;
+  // Key-light azimuth, as engine.setPointer. Defaults to the engine's own
+  // (0.4, 0.4) so the thumbnail matches the preset's first impression in the
+  // editor; override only when a preset's relief needs a different rake.
+  aim?: [number, number];
+}
+
 export interface Preset {
   // Stable URL token (serialized as `pr=<id>`). Renaming one breaks existing
   // shared links, so treat these as permanent once shipped.
   id: string;
   title: string;
   values: Record<string, number>;
+  thumb?: ThumbSpec;
 }
 
 export const PRESETS: Preset[] = [
@@ -31,6 +51,7 @@ export const PRESETS: Preset[] = [
       glint: 0, envStrength: 0.84, envWarmth: 1, lightHeight: 0.105104,
       lightHue: 0.427778, lightSat: 0.62,
     },
+    thumb: { scale: 1.5, centerX: 1.0, centerY: 1.0 }
   },
   {
     id: "hammered-copper",
@@ -43,6 +64,7 @@ export const PRESETS: Preset[] = [
       enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.52,
       grainScale: 1570, filmGrain: 0.084,
     },
+    thumb: { scale: 2.9, centerX: -0.75, centerY: -0.1 },
   },
   {
     id: "golden-record",
@@ -54,6 +76,7 @@ export const PRESETS: Preset[] = [
       metal: 1, enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.83,
       grainScale: 1570,
     },
+    thumb: { scale: 2.5, centerX: -0.53, centerY: -0.51 },
   },
   {
     id: "cornfield",
@@ -67,6 +90,9 @@ export const PRESETS: Preset[] = [
       envWarmth: 1, lightHeight: 0.445229, exposure: 1.05,
       keyStrength: 0.65, lightHue: 0.219444, lightSat: 1,
     },
+    // Its identity is the spectral fringes on the cut walls, which are
+    // invisible at plate scale — this was the weakest tile by a wide margin.
+    thumb: { scale: 3, centerY: -1.0 },
   },
   {
     id: "black-card",
@@ -82,6 +108,11 @@ export const PRESETS: Preset[] = [
       lightHeight: 0.445229, exposure: 0.23, keyStrength: 0.05,
       lightHue: 0.219444, lightSat: 1,
     },
+    // Deliberately near-black (exposure 0.23, keyStrength 0.05), so at plate
+    // scale it is an empty square. Zoom is the only lever that helps: aim
+    // moves the key light's azimuth, and this preset is lit almost entirely by
+    // env. Do NOT "fix" it by brightening — being dark IS the preset.
+    thumb: { scale: 2.6 },
   },
   {
     id: "tiger",
@@ -93,6 +124,7 @@ export const PRESETS: Preset[] = [
       twist: 3, twistWaveAmp: 0.96, twistWaveFreq: 2.5,
       twistWavePhase: 3.368485, invert: 1, flatHue: 1, flatSat: 1,
     },
+    thumb: { scale: 4.0, centerX: -1.0 }
   },
   {
     id: "silver-star",
@@ -104,6 +136,7 @@ export const PRESETS: Preset[] = [
       anisotropy: 0.66, shininess: 157.5865, finish: 0.44, iridescence: 1,
       spectralPitch: 5.46, spectralSat: 1, grain: 0.8, grainScale: 1320,
     },
+    thumb: { scale: 2.75 }
   },
   {
     id: "woodgrain",
@@ -115,6 +148,9 @@ export const PRESETS: Preset[] = [
       twistWavePhase: 6.283185, invert: 1, flatHue: 0.202778,
       flatSat: 0.16,
     },
+    // Linear mode, so there is no silhouette to preserve — any patch is the
+    // whole story, and a slight zoom makes the line quality legible.
+    thumb: { scale: 1.5 },
   },
   {
     id: "sunburst",
@@ -127,6 +163,7 @@ export const PRESETS: Preset[] = [
       lightHue: 0.197222, lightSat: 1, enamel: 0.25, enamelHue: 0.088889,
       enamelDepth: 6, filmGrain: 0.15,
     },
+    thumb: { scale: 0.25 }
   },
 ];
 
@@ -161,6 +198,19 @@ if (import.meta.env.DEV) {
         throw new Error(
           `Preset "${preset.id}": ${key}=${value} is outside [${def.min}, ${def.max}] — ` +
             `decode() clamps on load, so a shared link would not reproduce it`,
+        );
+      }
+    }
+    // Thumbnail framing rides the same three params, so hold it to the same
+    // ranges — the generator feeds these straight to setParams, where an
+    // out-of-range value would render something no share link can reproduce.
+    for (const key of ["scale", "centerX", "centerY"] as const) {
+      const value = preset.thumb?.[key];
+      if (value === undefined) continue;
+      const def = defs.get(key)!;
+      if (value < def.min || value > def.max) {
+        throw new Error(
+          `Preset "${preset.id}": thumb.${key}=${value} is outside [${def.min}, ${def.max}]`,
         );
       }
     }

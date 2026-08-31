@@ -601,6 +601,72 @@ The tilt and the key light are driven by the SAME aim signal, so resetting only
 the tilt left the two visibly disagreeing once the light started holding its
 last value. Both now hold.
 
+## Preset thumbnails (Nate-initiated, post-TASK-9)
+
+`npm run thumbs` renders every preset through the real engine in real Chrome
+and writes `public/thumbs/<id>.webp`. **The output is committed and Netlify
+never runs the script** — pulling Chromium into a deploy to regenerate nine
+images that change a few times a year is a bad trade.
+
+- **Playwright, not a headless GL binding.** The shader is `#version 300 es`,
+  so it needs WebGL2, and `headless-gl` is WebGL1 only — it would reject the
+  shader outright. Driving real Chrome also means a thumbnail comes out of
+  exactly the code path the editor uses and cannot drift into being a second
+  renderer. Chromium runs on SwiftShader, so output does not depend on the
+  card in whatever machine ran the script.
+- **The generator page is `scripts/thumbs.html`, deliberately NOT a route.**
+  Routing is the file layout, so a `thumbs/index.html` would ship a public
+  `/thumbs` page. Vite's dev server serves any file under the project root
+  while `build.rollupOptions.input` lists only the landing and editor entries,
+  so this file has real TS and real `?raw` shader imports in dev and is
+  invisible to the build. Verified: nothing matching `thumbs` lands in `dist`
+  except the asset directory itself.
+- **`renderThumb` MUST stay synchronous end to end.** The engine's context has
+  no `preserveDrawingBuffer`, so the drawing buffer is only valid until control
+  returns to the event loop. The `drawImage` that resolves the render has to
+  run in the same task as the `render()` that filled it — await anything in
+  between and every thumbnail comes out transparent.
+- **Supersampling is the page's `deviceScaleFactor`, not a second code path.**
+  The canvas is set to `size` CSS px and the engine's normal `resize()` takes
+  the backing store to `size * dpr`; the `imageSmoothingQuality: "high"`
+  downscale is then an SSAA resolve. This is not optional polish: dense
+  guilloché at 320px is far past Nyquist, and a 1:1 render aliases into flat
+  grey mush that has no identity. 4x is what makes unresolvable hairlines read
+  as the IMPRESSION of fineness.
+- **`thumb` on a Preset is catalog metadata and lives OUTSIDE `values`,** so it
+  can never reach what clicking the preset loads. It carries `scale`/`centerX`/
+  `centerY` (validated against the same SCHEMA ranges as any other value) and
+  an optional `aim`. It exists because a whole plate shrunk to 320px is the
+  wrong picture for half the gallery: presets identified by their SILHOUETTE
+  (Peacock, Golden Record, Tiger, Silver Star, Sunburst) want the full plate,
+  while presets identified by TEXTURE (Hammered Copper, Cornfield, Woodgrain)
+  read far better zoomed onto a characteristic patch. Black Card is the third
+  case — it is deliberately near-black (`exposure: 0.23`, `keyStrength: 0.05`)
+  and was an empty square at plate scale. Zoom is the only lever that helps it:
+  `aim` moves the key light's AZIMUTH and this preset is lit almost entirely by
+  env. Do not "fix" it by brightening. Being dark IS the preset.
+- **To frame one by hand:** load it in the editor, switch the stage to the
+  **Thumb** preview frame (square, matching the generator's crop — that is why
+  it exists), tune Scale / Pan X / Pan Y until the plate looks right, and read
+  `sc`/`cx`/`cy` off the URL into its `thumb`. Then `npm run thumbs --
+  --only <id>` to regenerate just that one.
+- **`vite.config.embed.ts` sets `publicDir: false`.** Without it Vite copies
+  `public/` into `dist-embed`, and `package.json`'s `files` takes `dist-embed`
+  wholesale — so the published package would ship the editor's thumbnails to
+  consumers.
+- **Drift is real and is stamped.** A committed image silently stops matching
+  the app the next time `pattern.frag.glsl` changes. The script hashes the two
+  shaders plus `presets.ts` and `schema.ts` into `scripts/thumbs.stamp.json`;
+  `npm run thumbs -- --check` exits non-zero when that hash has moved. A
+  `--only` run deliberately does NOT write the stamp, since the other eight are
+  then still at an older revision.
+
+The gallery tiles are hand-rolled in `ControlRail.tsx` rather than Jig Buttons
+(a labelled image tile is not one of Jig's primitives). The plate framing —
+rounded corners, the hairline inset ring, the shadow — is CSS in `styles.css`
+rather than baked into the WebP, so it themes with the rail and so dark presets
+still show an edge instead of dissolving into the dialog.
+
 ## Panel grouping
 
 `group` on a `ParamDef` is a free-form string; `GROUP_ORDER` sets the folder

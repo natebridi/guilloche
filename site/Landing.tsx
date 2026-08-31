@@ -59,7 +59,7 @@ export function Landing() {
               placeContent: 'center'
             }}>
               <guilloche-pattern style={{ position: 'absolute', inset: 0, aspectRatio: '5/3' }} params="v1&pr=sunburst" />
-              <guilloche-pattern style={{ position: 'absolute', width: '30%', borderRadius: 999, placeSelf: 'center' }} params="v1&amp;d=24&amp;pa=0.575959&amp;pt=0.08&amp;a1=0&amp;f1=35&amp;a2=0&amp;at=0.4&amp;tw=3&amp;wa=1.52&amp;wf=4.5&amp;mt=1&amp;ir=1&amp;sp=3.72&amp;ks=1.35&amp;lu=0.197222&amp;la=1&amp;en=0.25&amp;eh=0.088889&amp;ed=6&amp;fg=0.15" />
+              <guilloche-pattern style={{ position: 'absolute', width: '20%', borderRadius: 999, placeSelf: 'center' }} params="v1&amp;sc=1.5&amp;d=20&amp;pa=0.575959&amp;pt=0.08&amp;a1=0&amp;f1=35&amp;a2=0&amp;at=0.4&amp;tw=3&amp;wa=1.52&amp;wf=4.5&amp;mt=1&amp;ir=1&amp;sp=3.72&amp;ks=1.35&amp;lu=0.197222&amp;la=1&amp;en=0.25&amp;eh=0.088889&amp;ed=6&amp;fg=0.15" />
             </Box>
             <ToggleButtonGroup>
               <ToggleButton value="style1" pressedIcon='eye'>Golden sun</ToggleButton>
