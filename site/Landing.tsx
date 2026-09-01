@@ -1,197 +1,428 @@
-import type { ReactNode } from "react";
-import { Grid, Stack, Button, Typography, Adorn, CodeBlock, ToggleButton, ToggleButtonGroup, Box, Link } from "@jig-ui/react";
-import { color } from "@jig-ui/react/tokens";
-import { Diagnostics } from "./Diagnostics";
+import { useState } from "react";
+import {
+  CodeBlock,
+  Icon,
+  IconButton,
+  Link,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from "@jig-ui/react";
+import { PRESETS, findPreset } from "../src/presets";
+import { SCHEMA } from "../src/schema";
+import { paramsString, useSlideCarousel, useTweenedParams } from "./patternDemo";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+// Preset ids are read from PRESETS rather than written out here, so the page
+// cannot drift from the gallery the way the old one had — it still referenced
+// `pr=rosette`, `pr=barleycorn` and `pr=certificate`, none of which have
+// existed since TASK 9, and decode() silently ignores an unknown `pr`, so four
+// samples were quietly rendering identical defaults.
+const HERO_IDS = PRESETS.map((p) => p.id);
+
+// A curated subset for the picker: enough range to show the gallery is varied
+// without a row of thumbnails wide enough to need its own scroll container.
+const PICKER_IDS = ["hammered-copper", "golden-record", "peacock", "silver-star", "tiger"];
+
+// ---------------------------------------------------------------------------
+
+function TopBar() {
   return (
-    <Stack as="section" direction="column" spacing="400">
-      <Typography as="h2" with="heading03">
-        {title}
-      </Typography>
-      {children}
-    </Stack>
+    <header className="topbar">
+      <div className="topbar-mark">
+        <Typography with="display06">Guilloché</Typography>
+        <span className="mono-note">v0.1.0</span>
+      </div>
+      <nav className="topbar-nav">
+        <Link href="https://www.npmjs.com/package/@natebridi/guilloche" with="body01">
+          npm
+        </Link>
+        {/* Icon-only, so the accessible name has to come from aria-label — and
+            there is no text for an underline to sit under. */}
+        <Link
+          href="https://github.com/natebridi/guilloche"
+          with="body01"
+          aria-label="GitHub"
+          underline={false}
+        >
+          {/* The glyph is the Link's child rather than its `icon` prop: `icon`
+              sizes to the label's 1em, which is a thin tap target for the one
+              control here that has no text beside it. */}
+          <Icon icon="github-logo" size="1.25rem" />
+        </Link>
+      </nav>
+    </header>
   );
 }
 
-function Lead({ children }: { children: ReactNode }) {
-  return (
-    <Typography with="body01" style={{ maxWidth: "62ch", color: color.text.secondary }}>
-      {children}
-    </Typography>
-  );
-}
+function Hero() {
+  const { index, phase, direction, next, prev } = useSlideCarousel(HERO_IDS.length);
+  const preset = findPreset(HERO_IDS[index]);
 
-function Sample({ label, params, ...rest }: { label: string; params: string } & Record<string, unknown>) {
   return (
-    <figure className="figure">
-      <Stack direction="column" spacing="200">
-        <guilloche-pattern params={params} {...rest} />
-        <Typography as="figcaption" with="caption02" style={{ color: color.text.secondary }}>
-          {label}
+    <section className="hero">
+      <div className="hero-copy">
+        <Typography as="h1" with="display01">
+          Guilloché
         </Typography>
-      </Stack>
-    </figure>
+        <Typography as="p" with="body02" className="lead">
+          The engraved pattern on watch dials and banknotes, rendered live in WebGL2 as
+          one custom element.
+        </Typography>
+        <Link
+          href="/create"
+          variant="smoke"
+          size="lg"
+          icon="arrow-right"
+          iconPosition="end"
+        >
+          Create your guilloché
+        </Link>
+        <span className="mono-note">npm i @natebridi/guilloche</span>
+      </div>
+
+      <div className="hero-plate">
+        {/* One live element for the whole carousel. `key` is deliberately NOT
+            the preset id: re-keying would tear down and rebuild the GL context
+            on every slide, which is both the expensive thing and the one thing
+            the context budget cannot afford. */}
+        <div className={`plate slide slide-${phase} slide-${direction > 0 ? "fwd" : "back"}`}>
+          <guilloche-pattern params={paramsString({}, preset?.id)} />
+        </div>
+        <div className="plate-controls">
+          <IconButton icon="caret-left" label="Previous pattern" onClick={prev} />
+          <IconButton icon="caret-right" label="Next pattern" onClick={next} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PresetExample() {
+  const [id, setId] = useState(PICKER_IDS[0]);
+
+  return (
+    <div className="example example-media-first">
+      <div className="plate example-plate">
+        <guilloche-pattern params={paramsString({}, id)} />
+      </div>
+      <div className="example-body">
+        <Typography as="h3" with="display04">
+          Ready-made presets
+        </Typography>
+        <div className="picker" role="group" aria-label="Preset">
+          {PICKER_IDS.map((presetId) => {
+            const active = presetId === id;
+            return (
+              <button
+                key={presetId}
+                type="button"
+                className="picker-thumb"
+                aria-pressed={active}
+                onClick={() => setId(presetId)}
+              >
+                <img src={`/thumbs/${presetId}.webp`} alt={findPreset(presetId)?.title ?? presetId} />
+                {/* The active thumb is marked by an overlaid eye rather than a
+                    selected-background, so the pattern underneath stays fully
+                    visible — the thumbnails are the content here, not labels. */}
+                {active && (
+                  <span className="picker-eye" aria-hidden="true">
+                    <Icon icon="eye" size="1.25rem" />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <CodeBlock>{`<guilloche-pattern params="v1&pr=${id}"></guilloche-pattern>`}</CodeBlock>
+      </div>
+    </div>
+  );
+}
+
+// Chosen for visible reach rather than for covering the schema: amplitude
+// swells the lobes, twist shears them into a spiral, offset opens the hole at
+// the centre. All three are floats, so every sweep tweens continuously —
+// `density` used to step, because decode() rounds ints.
+/** The editor rail's label for a param, so the two never drift apart. */
+const paramLabel = (key: string) => SCHEMA.find((d) => d.key === key)?.label ?? key;
+
+const AMP1S = [0.02, 0.06, 0.1];
+const TWISTS = [0, 0.9, 2];
+const OFFSETS = [0, 0.06, 0.14];
+
+function ParamExample() {
+  // All three start OFF their schema default, so the snippet below shows every
+  // key from the first paint — `encode` writes only non-default values, and a
+  // demo whose code block omits the controls it is demonstrating reads broken.
+  const [amp1, setAmp1] = useState(0.1);
+  const [twist, setTwist] = useState(0.9);
+  const [offset, setOffset] = useState(0.06);
+
+  // The three knobs the controls expose, tweened; everything else is fixed so
+  // the demo has a recognisable identity to move around in.
+  //
+  // These are SCHEMA keys, not url keys: `encode` looks each param up by
+  // `d.key` and writes `d.urlKey`, so handing it `mt`/`d`/`tw` matches nothing
+  // and silently yields a bare "v1". The url keys only ever appear in the
+  // string encode produces — which is exactly what the snippet below shows.
+  const tweened = useTweenedParams({ amp1, twist, offset });
+  // metal and density are pinned here now that they are no longer controls, so
+  // the demo keeps the gold, dense plate it has always had.
+  const fixed = { freq1: 24, iridescence: 1, metal: 1, density: 44 };
+  const live = paramsString({ ...fixed, ...tweened });
+  // The snippet shows where the controls have been set, not where the tween
+  // currently is — a code block counting through 43.812 would be noise.
+  const shown = paramsString({ ...fixed, amp1, twist, offset });
+
+  return (
+    <div className="example">
+      <div className="example-body">
+        <Typography as="h3" with="display04">
+          Build your own
+        </Typography>
+        <Typography as="p" with="body01" className="lead">
+          Every parameter in the guilloché editor can be represented in the embed's
+          params property, and any change is immediately rendered.
+        </Typography>
+
+        <div className="param-rows">
+          <div className="param-row">
+            <Typography as="span" with="body01" tone="secondary" className="param-key">
+              {paramLabel("amp1")}
+            </Typography>
+            <ToggleButtonGroup
+              aria-label={paramLabel("amp1")}
+              value={[String(amp1)]}
+              onValueChange={(v) => setAmp1(Number(v[0] ?? amp1))}
+            >
+              {AMP1S.map((a) => (
+                <ToggleButton key={a} size="sm" value={String(a)}>
+                  {a.toFixed(2)}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </div>
+          <div className="param-row">
+            <Typography as="span" with="body01" tone="secondary" className="param-key">
+              {paramLabel("twist")}
+            </Typography>
+            <ToggleButtonGroup
+              aria-label={paramLabel("twist")}
+              value={[String(twist)]}
+              onValueChange={(v) => setTwist(Number(v[0] ?? twist))}
+            >
+              {TWISTS.map((t) => (
+                <ToggleButton key={t} size="sm" value={String(t)}>
+                  {t.toFixed(1)}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </div>
+          <div className="param-row">
+            <Typography as="span" with="body01" tone="secondary" className="param-key">
+              {paramLabel("offset")}
+            </Typography>
+            <ToggleButtonGroup
+              aria-label={paramLabel("offset")}
+              value={[String(offset)]}
+              onValueChange={(v) => setOffset(Number(v[0] ?? offset))}
+            >
+              {OFFSETS.map((o) => (
+                <ToggleButton key={o} size="sm" value={String(o)}>
+                  {o.toFixed(2)}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </div>
+        </div>
+
+        <CodeBlock>{`params="${shown}"`}</CodeBlock>
+      </div>
+      <div className="plate example-plate">
+        <guilloche-pattern params={live} />
+      </div>
+    </div>
+  );
+}
+
+const SHAPES = [
+  { id: "full", label: "Full width", css: "aspect-ratio: 16 / 5; width: 100%;" },
+  { id: "card", label: "Card", css: "aspect-ratio: 22 / 14; width: 460px;" },
+  { id: "circle", label: "Circle", css: "aspect-ratio: 1; width: 340px; border-radius: 50%;" },
+];
+
+function ShapeExample() {
+  const [shape, setShape] = useState("full");
+  const current = SHAPES.find((s) => s.id === shape) ?? SHAPES[0];
+
+  return (
+    <div className="example example-stacked">
+      <div className="example-head">
+        <Typography as="h3" with="display04">
+          Any size and shape
+        </Typography>
+        <Typography as="p" with="body01" className="lead">
+          Guilloché can be sized to fit any shape.
+        </Typography>
+      </div>
+
+      <div className="shape-row">
+        <ToggleButtonGroup
+          aria-label="Shape"
+          value={[shape]}
+          onValueChange={(v) => setShape(v[0] ?? shape)}
+        >
+          {SHAPES.map((s) => (
+            <ToggleButton key={s.id} size="sm" value={s.id}>
+              {s.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        <CodeBlock>{`guilloche-pattern { ${current.css} }`}</CodeBlock>
+      </div>
+
+      {/* Fixed height, so switching shape resizes the pattern inside a stable
+          box instead of reflowing everything below it.
+          The shape class goes on a WRAPPER, not on the element: React renders
+          `className` on a custom element as a literal `classname` attribute,
+          so styling one directly from JSX silently does nothing. */}
+      <div className="shape-stage">
+        <div className={`shape shape-${shape}`}>
+          <guilloche-pattern params="v1&pr=woodgrain" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ATTRIBUTES = [
+  {
+    name: "params",
+    fallback: "required",
+    description:
+      "The editor share-link string. Reactive — change it and the pattern updates in place. Anything you leave out falls back to its default.",
+  },
+  {
+    name: "interactive",
+    fallback: "track",
+    description:
+      "track — the pointer aims the key light from anywhere on the page. hover — only over the element. off — no listeners. gyro — adds device orientation, needs HTTPS.",
+  },
+  {
+    name: "max-dpr",
+    fallback: "2",
+    description:
+      "Cap on devicePixelRatio. Lower it for large embeds — the shader is expensive per pixel.",
+  },
+];
+
+function Reference() {
+  return (
+    <section className="section reference" id="reference">
+      <Typography as="h2" with="display03">
+        Attributes
+      </Typography>
+
+      <dl className="attrs">
+        {ATTRIBUTES.map((attr) => (
+          <div className="attr" key={attr.name}>
+            <dt className="attr-name">{attr.name}</dt>
+            <dd className="attr-desc">
+              {/* Typography's `as` does not accept `dd`, so the preset is
+                  applied inside the definition rather than by replacing it —
+                  the list keeps its dl/dt/dd semantics either way. */}
+              <Typography as="span" with="body01">
+                {attr.description}
+              </Typography>
+            </dd>
+            <dd className="attr-default">{attr.fallback}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="code-pair">
+        <div className="code-col">
+          <Typography as="h3" with="display05">
+            Fallback
+          </Typography>
+          <Typography as="p" with="body01" className="lead">
+            Child content shows only when a WebGL2 context can't be created. Put a
+            poster image there.
+          </Typography>
+          <CodeBlock label="html">{`<guilloche-pattern params="v1&pr=peacock">
+  <img src="poster.png" alt="Guilloché pattern" />
+</guilloche-pattern>`}</CodeBlock>
+        </div>
+        <div className="code-col">
+          <Typography as="h3" with="display05">
+            Programmatic
+          </Typography>
+          <Typography as="p" with="body01" className="lead">
+            Drive a canvas directly, without the custom element.
+          </Typography>
+          <CodeBlock label="js">{`const handle = mountGuilloche(canvas, {
+  params: decode("v1&pr=sunburst").params,
+});
+
+handle.setParams({ twist: 1.2 });
+handle.destroy();`}</CodeBlock>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ClosingCta() {
+  return (
+    <section className="closing">
+      <div className="closing-bg">
+        <guilloche-pattern params="v1&pr=black-card" interactive="off" />
+      </div>
+      <Link href="/create" variant="smoke" size="lg" icon="arrow-right" iconPosition="end">
+        Create your guilloché
+      </Link>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="footer">
+      <div className="topbar-mark">
+        <Typography with="display06">Guilloché</Typography>
+        <span className="mono-note">MIT · @natebridi/guilloche</span>
+      </div>
+      <Typography as="span" with="caption02" tone="muted" className="footer-by">
+        Built by Nate Bridi
+      </Typography>
+    </footer>
   );
 }
 
 export function Landing() {
   return (
-    <Stack as="main" direction="column" spacing="900">
-
-      <Stack style={{ minHeight: '60vh', width: '100vw' }} justify='center'>
-
-        <Grid columns={24} style={{  maxWidth: '60rem', marginInline: 'auto' }}>
-          <Box span={{ xs: 24, md: 8 }} alignSelf='center' mb="600" style={{ zIndex: 3 }}>
-            <Typography as="h1" with="display01" mb="300">Guilloche</Typography>
-            <Typography as="p" with="display05" pl="300" balance>Shader for patterns etched in metal</Typography>
-            <Box mt="600" pl="300">
-              <Link variant="smoke" icon="arrow-right" iconPosition="end" href="/create">Create your guilloché</Link>
-            </Box>
-          </Box>
-          <Stack spacing="500" py="600" align="center" span={{ xs: 24, md: 16 }} style={{ zIndex: 2 }}>
-            <Box style={{
-              overflow: 'hidden',
-              position: 'relative',
-              borderRadius: '1rem',
-              aspectRatio: '5/3',
-              width: '30rem',
-              placeContent: 'center'
-            }}>
-              <guilloche-pattern style={{ position: 'absolute', inset: 0, aspectRatio: '5/3' }} params="v1&pr=sunburst" />
-              <guilloche-pattern style={{ position: 'absolute', width: '20%', borderRadius: 999, placeSelf: 'center' }} params="v1&amp;sc=1.5&amp;d=20&amp;pa=0.575959&amp;pt=0.08&amp;a1=0&amp;f1=35&amp;a2=0&amp;at=0.4&amp;tw=3&amp;wa=1.52&amp;wf=4.5&amp;mt=1&amp;ir=1&amp;sp=3.72&amp;ks=1.35&amp;lu=0.197222&amp;la=1&amp;en=0.25&amp;eh=0.088889&amp;ed=6&amp;fg=0.15" />
-            </Box>
-            <ToggleButtonGroup>
-              <ToggleButton value="style1" pressedIcon='eye'>Golden sun</ToggleButton>
-              <ToggleButton value="style2" pressedIcon='eye'>Silver burst</ToggleButton>
-              <ToggleButton value="style3" pressedIcon='eye'>Ocean drop</ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-        </Grid>
-
-        <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-          <guilloche-pattern style={{ width: '100%', height: '100%' }} params="v1&pr=black-card" />
-        </div>
-
-      </Stack>
-
-
-      <Stack direction="column" spacing="300">
-        <Typography as="h1" with="display01">
-          Guilloche
-        </Typography>
-        <Typography as="p" with="body02">
-          Drop-in WebGL2 guilloché patterns. One script tag, then an element.
-          Configuration is the same string the editor's <Adorn with="semibold">Copy
-          link</Adorn> button produces, so a shared link and an embed are
-          interchangeable.
-        </Typography>
-        <CodeBlock>{`<script type="module"
-  src="https://cdn.jsdelivr.net/npm/@natebridi/guilloche@0.1/dist-embed/guilloche-element.js"></script>
-
-<guilloche-pattern params="v1&pr=barleycorn" style="width:480px"></guilloche-pattern>`}</CodeBlock>
-      </Stack>
-
-      <Section title="By preset name">
-        <Lead>
-          A bare <Adorn with="semibold">pr=&lt;name&gt;</Adorn> resolves to that
-          preset's full parameter set — the shortest possible embed.
-        </Lead>
-        <Grid columns={{ xs: 1, sm: 2, lg: 4 }} spacing="400">
-          <Sample label="pr=rosette" params="v1&pr=rosette" />
-          <Sample label="pr=barleycorn" params="v1&pr=barleycorn" />
-          <Sample label="pr=sunburst" params="v1&pr=sunburst" />
-          <Sample label="pr=certificate" params="v1&pr=certificate" />
-        </Grid>
-      </Section>
-
-      <Section title="By explicit parameters">
-        <Lead>Any tweaked state from the editor pastes in the same way.</Lead>
-        <Grid columns={{ xs: 1, sm: 2, lg: 3 }} spacing="400">
-          <Sample
-            label="gold, twisted — interactive=gyro"
-            params="v1&d=44&ml=1&a1=0.035&f1=24&tw=0.9&ps=2&po=3.1416&mt=1"
-            interactive="gyro"
-          />
-          <Sample
-            label="flat, ink on paper"
-            params="v1&sh=0&iv=1&d=60&a1=0.1&f1=5&a2=0.05&f2=7&p2=1.2"
-          />
-          <Sample
-            label="iridescent"
-            params="v1&d=72&ir=0.8&gl=0.6&at=0.28&tw=0.35&f1=11"
-          />
-        </Grid>
-      </Section>
-
-      <Section title="Motion diagnostics">
-        <Lead>
-          Device orientation requires a <Adorn with="semibold">secure context</Adorn>.
-          Over plain <code>http://</code> on a LAN address it is unavailable and
-          fails silently at the browser level — open this page over HTTPS (or on{" "}
-          <code>localhost</code>) to use <code>interactive="gyro"</code>.
-        </Lead>
-        <Diagnostics />
-      </Section>
-
-      <Section title="As a banner">
-        <Lead>
-          The element defaults to a 1:1 aspect ratio and full width — override
-          either with plain CSS.
-        </Lead>
-        <guilloche-pattern
-          className="banner"
-          params="v1&mo=1&d=24&of=0.1&a1=0.08&f1=3&a2=0.03&f2=8&ps=2&po=3.1416"
-        />
-      </Section>
-
-      <Section title="Attributes">
-        <CodeBlock>{`params       Editor share-link string. Reactive — change it and the
-             pattern updates in place. Unset params fall back to defaults.
-
-interactive  "track"  the pointer aims the key light from anywhere on
-                      the page, so it keeps aiming when something is
-                      layered over the plate (default)
-             "hover"  only aim while the pointer is over the element
-             "off"    static; no listeners at all
-             "gyro"   track, plus device orientation. Needs HTTPS, and
-                      renders an "Enable motion" button on iOS.
-
-             The aim holds its last value whenever the pointer is
-             lost — it never snaps back to the default azimuth.
-
-max-dpr      Cap on devicePixelRatio. Default 2. Lower it for large
-             embeds — the shader is expensive per-pixel.`}</CodeBlock>
-        <Grid columns={{ xs: 1, sm: 2 }} spacing="400">
-          <Sample label='interactive="off"' params="v1&pr=net" interactive="off" />
-          <Sample label='max-dpr="1"' params="v1&pr=net" max-dpr="1" />
-        </Grid>
-      </Section>
-
-      <Stack as="section" spacing="400" align="stretch">
-        <Typography as="p" with="heading03">Fallback</Typography>
-        <Typography as="p" with="body02" mb="300">
-          Child content shows only if a WebGL2 context can't be created — put a
-          poster image there for the small fraction of visitors without it.
-        </Typography>
-        <CodeBlock label="html">{`<guilloche-pattern params="v1&pr=rosette">
-  <img src="poster.png" alt="Guilloché pattern" />
-</guilloche-pattern>`}</CodeBlock>
-      </Stack>
-
-      <Section title="Programmatic use">
-        <CodeBlock label="js">{`import { mountGuilloche, decode, schemaDefaults }
-  from "@natebridi/guilloche";
-
-const handle = mountGuilloche(canvas, {
-  params: { ...schemaDefaults(), ...decode("v1&pr=sunburst").params },
-  interactive: true,
-});
-
-handle.setParams({ twist: 1.2 });   // live update
-handle.setActive(false);            // idle the render loop
-handle.destroy();                   // release the GL context`}</CodeBlock>
-      </Section>
-    </Stack>
+    <>
+      <TopBar />
+      <main>
+        <Hero />
+        <section className="section usage">
+          <div className="section-head">
+            <Typography as="h2" with="display03">
+              Usage
+            </Typography>
+            <Typography as="p" with="body02" className="lead">
+              Guilloché configurations can be exported from the editor, either as a
+              link or an embed code.
+            </Typography>
+          </div>
+          <PresetExample />
+          <ParamExample />
+          <ShapeExample />
+        </section>
+        <Reference />
+        <ClosingCta />
+      </main>
+      <Footer />
+    </>
   );
 }

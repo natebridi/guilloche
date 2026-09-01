@@ -26,14 +26,14 @@ let engine: GuillocheEngine | null = null;
 declare global {
   interface Window {
     thumbIds(): string[];
-    renderThumb(id: string, size: number): string;
+    renderThumb(id: string, w: number, h: number): string;
   }
 }
 
 window.thumbIds = () => PRESETS.map((p) => p.id);
 
 /**
- * Render one preset and return it as a WebP data URL, `size` px square.
+ * Render one preset and return it as a WebP data URL, `w` x `h` px.
  *
  * MUST stay synchronous end to end. The engine's context is created without
  * `preserveDrawingBuffer`, so the drawing buffer is valid only until control
@@ -41,17 +41,22 @@ window.thumbIds = () => PRESETS.map((p) => p.id);
  * task as the render that filled it. Await anything in between and you get a
  * transparent thumbnail.
  */
-window.renderThumb = (id, size) => {
+window.renderThumb = (id, w, h) => {
   const preset = findPreset(id);
   if (!preset) throw new Error(`Unknown preset "${id}"`);
 
+  // A non-square frame is not a crop: the shader normalizes by min(u_res), so
+  // a 5:3 plate shows MORE pattern along the long axis at the same scale —
+  // which is exactly what the live element does on the page. Cropping a square
+  // render to 5:3 instead would hide a radial preset's whole silhouette.
+  //
   // Supersampling comes from the PAGE's deviceScaleFactor (set by the driver)
   // rather than a separate code path: the canvas is `size` CSS px, the engine
   // resizes its backing store to size * dpr through its normal resize(), and
   // the downscale below resolves it. Dense line work is well past Nyquist at
   // thumbnail size, so rendering 1:1 would alias into grey mush.
-  plate.style.width = `${size}px`;
-  plate.style.height = `${size}px`;
+  plate.style.width = `${w}px`;
+  plate.style.height = `${h}px`;
 
   const params = presetParams(preset);
   // Framing is catalog metadata, NOT part of the pattern — it must never reach
@@ -68,8 +73,8 @@ window.renderThumb = (id, size) => {
   engine.setPointer(ax, ay);
   engine.render();
 
-  out.width = size;
-  out.height = size;
+  out.width = w;
+  out.height = h;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("No 2D context for the downscale target");
   ctx.imageSmoothingEnabled = true;
@@ -77,7 +82,7 @@ window.renderThumb = (id, size) => {
   // averaging the subpixels is precisely what turns unresolvable hairlines
   // into the IMPRESSION of fineness rather than into moire.
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(plate, 0, 0, size, size);
+  ctx.drawImage(plate, 0, 0, w, h);
 
   return out.toDataURL("image/webp", 0.92);
 };

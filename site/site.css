@@ -1,7 +1,16 @@
-/* Page-level styling for the landing/docs page at /. Everything here is
-   expressed in Jig tokens (CSS custom properties) so the page follows the
-   design system's light/dark themes, which Jig switches on
-   prefers-color-scheme. */
+/* Page-level styling for the landing page at /.
+ *
+ * Everything here is expressed in Jig tokens (CSS custom properties) so the
+ * page follows the design system's light/dark themes, which Jig switches on
+ * prefers-color-scheme. Jig ships its CSS in @layer jig.*, so these unlayered
+ * rules always win — no specificity fights, and no overriding generated class
+ * names, which are not stable API.
+ *
+ * Jig's spacing and radius ladders are both exactly golden-ratio geometric
+ * (0.17 → 0.28 → 0.45 → 0.72 → 1.17 → 1.89 → 3.06 → 4.94 → 8rem, each step
+ * x1.618). The page's rhythm is those steps and nothing else, which is why
+ * there are no bare pixel values below outside of hairlines.
+ */
 
 body {
   margin: 0;
@@ -9,28 +18,440 @@ body {
   color: var(--color-text-primary);
 }
 
-.page {
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: var(--spacing-800) var(--spacing-500) var(--spacing-900);
+/* The gutter every full-width band shares. One variable so the top bar, the
+   sections and the footer cannot drift apart. */
+:root {
+  --gutter: var(--spacing-800);
+}
+@media (max-width: 860px) {
+  :root {
+    --gutter: var(--spacing-500);
+  }
 }
 
+/* Small monospace annotations — version, install line, param keys. Not a Jig
+   Typography preset because it is a UI label rather than prose. */
+.mono-note {
+  font-family: var(--type-family-mono);
+  font-size: var(--type-scale-200);
+  color: var(--color-text-muted);
+}
 
+.lead {
+  color: var(--color-text-secondary);
+  max-width: 46ch;
+}
 
-/* The pattern itself: a hairline frame so it reads as a placed object rather
-   than bleeding into the page. */
-guilloche-pattern {
-  border-radius: var(--radius-200);
+/* --- Top bar / footer ---------------------------------------------------- */
+
+.topbar,
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-500);
+  padding: var(--spacing-500) var(--gutter);
+  border-bottom: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+}
+.footer {
+  border-bottom: none;
+  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+  flex-wrap: wrap;
+}
+.topbar-mark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-400);
+}
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-600);
+}
+/* Type and colour come from the Typography preset on the element itself; Jig
+   sets no global font-family, so text styled only from here fell back to the
+   UA serif. */
+
+/* --- Sections ------------------------------------------------------------ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-700);
+  padding: var(--spacing-700) var(--gutter) var(--spacing-800);
+}
+.section-head,
+.example-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-400);
+}
+.reference {
+  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+}
+
+/* --- Hero ---------------------------------------------------------------- */
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-700);
+  padding: var(--spacing-800) var(--gutter);
+}
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-500);
+  flex: 0 0 26rem;
+}
+.hero-plate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-400);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.plate-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-200);
+}
+
+/* The plate: a placed object, not a bleed. The hairline is what stops a dark
+   preset from dissolving into the page ground. */
+.plate {
+  border-radius: var(--radius-600);
   overflow: hidden;
   background: var(--color-surfaces-card);
+  box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.22);
 }
-
-.banner {
-  aspect-ratio: 16 / 6;
+.hero-plate .plate {
+  aspect-ratio: 5 / 3;
+}
+/* The element ships `:host { width: 100%; aspect-ratio: 1 / 1 }`, which is the
+   right default for a bare embed and the wrong one inside a frame that already
+   has a shape. Outer-document rules beat `:host`, so this is where a plate
+   tells the pattern to fill it instead of imposing a square. */
+.plate > guilloche-pattern,
+.closing-bg > guilloche-pattern,
+.shape > guilloche-pattern {
+  display: block;
   width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.example-plate {
+  aspect-ratio: 1;
+  flex: 0 0 32rem;
+  max-width: 100%;
 }
 
-/* Grid/Stack handle layout; figure only needs its margin reset. */
-.figure {
+/* --- Hero carousel transition -------------------------------------------- */
+
+/* One live element slides out, swaps params while invisible, then slides back
+   in from the opposite edge. `slide-in` is the off-stage position and is
+   applied with transitions suppressed, so only the exit and the entrance
+   animate — see useSlideCarousel. */
+.slide {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.slide-out {
+  opacity: 0;
+}
+.slide-out.slide-fwd {
+  transform: translateX(-4%);
+}
+.slide-out.slide-back {
+  transform: translateX(4%);
+}
+.slide-in {
+  opacity: 0;
+  transition: none;
+}
+.slide-in.slide-fwd {
+  transform: translateX(4%);
+}
+.slide-in.slide-back {
+  transform: translateX(-4%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide {
+    transition: opacity 0.12s ease;
+  }
+  .slide-out,
+  .slide-in {
+    transform: none;
+  }
+}
+
+/* --- Usage examples ------------------------------------------------------ */
+
+.example {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-700);
+}
+/* Alternating sides: the media leads in the first example and follows in the
+   second, so three demos in a row read as an argument rather than a grid. */
+.example-media-first .example-plate {
+  order: -1;
+}
+.example-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-500);
+}
+.example-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-500);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* --- Preset picker ------------------------------------------------------- */
+
+/* Five across at every width. A wrapping flex row broke to a second line as
+   soon as five fixed 5.25rem thumbs stopped fitting; a five-column grid keeps
+   the row intact and lets the thumbs shrink instead. The max-width is the size
+   they used to be, so the grid only ever shrinks below the old layout — it
+   never grows past it on a wide rail. */
+.picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--spacing-300);
+  max-width: calc(5 * 5.25rem + 4 * var(--spacing-300));
+}
+.picker-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-500);
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+.picker-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+.picker-thumb:hover img {
+  transform: scale(1.06);
+}
+.picker-thumb:focus-visible {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}
+/* The active marker: an eye on the page's own ground colour, laid over the
+   thumbnail so the pattern underneath stays legible. */
+.picker-eye {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--color-surfaces-body);
+  color: var(--color-text-primary);
+}
+
+/* --- Param controls ------------------------------------------------------ */
+
+.param-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-300);
+}
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-500);
+}
+/* A fixed lane so the control groups line up down the column regardless of how
+   long each label is. Wide enough for the longest of them ("Offset") now that
+   these are the editor's words rather than two-letter url keys. */
+.param-key {
+  width: 5rem;
+  flex-shrink: 0;
+}
+
+/* --- Shape switcher ------------------------------------------------------ */
+
+.shape-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-500);
+}
+/* Stable dimensions: the pattern changes size and shape inside this box, so
+   nothing below it moves when the buttons are pressed. The height tracks the
+   viewport rather than being pinned at 26rem — at 430px the stage was still
+   416px tall while "Full width" drew 122px into it, leaving two thirds of the
+   frame empty. 30vw only bites below ~1387px, so the desktop box is unchanged. */
+.shape-stage {
+  display: grid;
+  place-items: center;
+  height: clamp(15rem, 30vw, 26rem);
+  border-radius: var(--radius-600);
+  background: var(--color-surfaces-card);
+  box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.22);
+  overflow: hidden;
+}
+.shape {
+  /* Without this the corners do nothing: border-radius does not clip a
+     descendant, and <guilloche-pattern>'s canvas is a rectangle that paints
+     straight over them — so "Circle" rendered as a square. */
+  overflow: hidden;
+  /* Never outgrow the stage on either axis, at any width. */
+  max-width: 100%;
+  max-height: 100%;
+  transition:
+    width 0.35s ease,
+    border-radius 0.35s ease;
+}
+.shape-full {
+  width: 100%;
+  aspect-ratio: 16 / 5;
+}
+.shape-card {
+  width: 100%;
+  max-width: 28.75rem;
+  aspect-ratio: 22 / 14;
+  border-radius: var(--radius-600);
+}
+/* Sized off the stage's HEIGHT, not its width: a square driven by width
+   overflows a stage that is wider than it is tall, which is every phone. */
+.shape-circle {
+  height: 100%;
+  max-height: 21.25rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+/* --- Attributes ---------------------------------------------------------- */
+
+.attrs {
   margin: 0;
+  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+}
+.attr {
+  display: grid;
+  grid-template-columns: 11rem 1fr 6rem;
+  gap: var(--spacing-600);
+  padding: var(--spacing-500) 0;
+  border-bottom: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+}
+.attr-name {
+  font-family: var(--type-family-mono);
+  font-size: var(--type-scale-200);
+  color: var(--color-text-accent);
+}
+.attr-desc,
+.attr-default {
+  margin: 0;
+}
+.attr-desc {
+  line-height: 1.5;
+}
+.attr-default {
+  font-family: var(--type-family-mono);
+  font-size: var(--type-scale-200);
+  color: var(--color-text-muted);
+}
+
+.code-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-600);
+}
+.code-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-400);
+  min-width: 0;
+}
+
+/* --- Closing band -------------------------------------------------------- */
+
+/* The one full-bleed pattern on the page. Black Card is deliberately near
+   black, which is exactly what a ground needs to be: it carries texture
+   without competing with the control laid over it. */
+.closing {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 24rem;
+  overflow: hidden;
+  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
+}
+.closing-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.closing > :not(.closing-bg) {
+  position: relative;
+}
+
+/* --- Narrow --------------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .hero,
+  .example {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-500);
+  }
+  .hero {
+    padding-block: var(--spacing-700) var(--spacing-600);
+  }
+  .hero-copy {
+    flex: initial;
+  }
+  .hero-plate .plate {
+    aspect-ratio: 5 / 3;
+  }
+  /* On one column the media leads every example — the heading still comes
+     first in the reading order because .example-body owns it. */
+  .example-plate {
+    flex: initial;
+    order: 0;
+  }
+  .example-media-first .example-plate {
+    order: 0;
+  }
+  .section {
+    gap: var(--spacing-600);
+  }
+  .attr {
+    grid-template-columns: 1fr auto;
+    gap: var(--spacing-300) var(--spacing-500);
+  }
+  .attr-desc {
+    grid-column: 1 / -1;
+  }
+  .attr-default {
+    text-align: right;
+  }
+  .code-pair {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-600);
+  }
+  .shape-stage {
+    height: 16rem;
+  }
 }

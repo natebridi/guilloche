@@ -15,10 +15,16 @@ import "./site.css";
 // smoke test in the build does.
 import "../src/embed";
 
+// Annotation toolbar for visual feedback to coding agents. Vite statically
+// replaces import.meta.env.DEV, so the import and the element are both dropped
+// from the production bundle (the Vite equivalent of the NODE_ENV check).
+import { Agentation } from "agentation";
+
 import { Landing } from "./Landing";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Landing />
+    {import.meta.env.DEV && <Agentation />}
   </StrictMode>,
 );

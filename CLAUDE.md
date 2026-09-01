@@ -601,6 +601,67 @@ The tilt and the key light are driven by the SAME aim signal, so resetting only
 the tilt left the two visibly disagreeing once the light started holding its
 last value. Both now hold.
 
+## The landing page (Nate-initiated, post-TASK-9)
+
+`site/Landing.tsx` was rebuilt from a Paper mockup: a hero carousel, three live
+usage demos, an attribute reference, and a closing CTA over a full-bleed
+pattern. Layout is plain CSS in `site/site.css`; every control is a Jig
+component and every value is a Jig token, so the page follows the design
+system rather than restating it. `site/patternDemo.ts` holds the two hooks the
+demos need, kept out of `src/` because this is the website's machinery, not
+part of the published package.
+
+Five things here are easy to get wrong and were all gotten wrong first:
+
+- **`encode()` keys by `d.key`, NOT `d.urlKey`.** It reads each param out of
+  the object by its SCHEMA key and writes the short url key. Hand it `{ mt: 1,
+  d: 44 }` and every lookup misses, so it silently returns a bare `"v1"` and
+  the pattern renders defaults with no error anywhere. Pass `{ metal: 1,
+  density: 44 }`; url keys only ever exist in the string that comes back out.
+- **React renders `className` on a custom element as a literal `classname`
+  attribute.** Styling `<guilloche-pattern className="...">` from JSX does
+  nothing at all — no warning, no error, the rule just never matches. Every
+  pattern on the page is therefore wrapped in a plain `<div>` that carries the
+  class, which also keeps the CSS framework-agnostic. Worth knowing for the
+  docs: any React consumer of the element hits this.
+- **The element ships `:host { width: 100%; aspect-ratio: 1 / 1 }`.** That is
+  the right default for a bare embed and the wrong one inside a frame that
+  already has a shape. Outer-document rules beat `:host`, so `.plate >
+  guilloche-pattern` sets `height: 100%; aspect-ratio: auto` to make it fill
+  its frame instead of imposing a square.
+- **Preset ids come from `PRESETS`, never string literals.** The old page still
+  referenced `pr=rosette`, `pr=barleycorn`, `pr=certificate` and `pr=net`, none
+  of which have existed since TASK 9 — and `decode()` ignores an unrecognized
+  `pr` rather than throwing, so four samples were quietly rendering identical
+  defaults. Deriving the list makes that class of drift impossible.
+- **One live element per demo, five in total.** WebGL contexts are capped per
+  page and the browser evicts the oldest, so the hero carousel swaps params on
+  a single plate rather than cross-fading two. `useSlideCarousel` slides it
+  out, changes params while it is invisible, and slides it back in from the
+  opposite edge; `key` is deliberately not the preset id, since re-keying would
+  tear down and rebuild the context on every slide.
+
+`useTweenedParams` lerps a handful of floats on rAF and rebuilds the params
+string each frame, so switching a control sweeps the shader instead of cutting.
+No animation library: the element's `params` attribute is the only way in, and
+a tween library would be managing values it cannot hand to the shader any
+faster. Int params (`density`) still step, because `decode()` rounds them —
+that is correct, not a glitch.
+
+**Debugging note:** a `<guilloche-pattern>` that renders blank under browser
+automation is almost always `document.visibilityState === "hidden"`, not a
+bug. Rendering is rAF-driven and rAF is paused in a backgrounded tab, so a
+tab that is being screenshotted but not foregrounded never draws. Check
+visibility before chasing the context cap. Playwright renders correctly
+because its pages are not backgrounded.
+
+`tsconfig.json` now maps `react`/`react-dom` through `paths` to this project's
+`@types`. Jig is linked from a sibling checkout carrying its own
+`@types/react` 19 while this app is on 18, and TypeScript otherwise sees two
+React type universes — `Link` fails with "cannot be used as a JSX component"
+and `npm run build` dies before Vite runs. This is the type-level twin of the
+runtime `resolve.dedupe` already in `vite.config.ts`.
+
 ## Preset thumbnails (Nate-initiated, post-TASK-9)
 
 `npm run thumbs` renders every preset through the real engine in real Chrome

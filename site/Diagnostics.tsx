@@ -60,11 +60,14 @@ export function Diagnostics() {
 
   return (
     <Stack direction="column" spacing="400">
-      <Stack
-        as="dl"
-        direction="column"
-        spacing="200"
+      {/* A native <dl>: Jig's `as` unions cover prose and layout elements, not
+          description lists, so the semantics have to come from real markup
+          with Typography nested inside the terms rather than wrapping them. */}
+      <dl
         style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: spacing[200],
           margin: 0,
           padding: spacing[500],
           background: color.surfaces.card,
@@ -78,27 +81,23 @@ export function Diagnostics() {
             spacing="200"
             align={{ xs: "start", sm: "baseline" }}
           >
-            <Typography
-              as="dt"
-              with="caption01"
-              style={{ minWidth: "14rem", color: color.text.secondary }}
-            >
-              {label}
-            </Typography>
-            <Typography
-              as="dd"
-              with="body02"
-              style={{ margin: 0, fontFamily: "var(--type-family-mono)" }}
-            >
+            <dt style={{ minWidth: "14rem" }}>
+              <Typography with="caption01" style={{ color: color.text.secondary }}>
+                {label}
+              </Typography>
+            </dt>
+            <dd style={{ margin: 0 }}>
+              <Typography with="body02" style={{ fontFamily: "var(--type-family-mono)" }}>
               {ok === null ? (
                 value
               ) : (
                 <Adorn with={ok ? "accent" : "danger"}>{value}</Adorn>
               )}
-            </Typography>
+              </Typography>
+            </dd>
           </Stack>
         ))}
-      </Stack>
+      </dl>
 
       <Stack direction="row" spacing="300" align="center">
         <Button

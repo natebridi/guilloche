@@ -12,6 +12,7 @@
 //
 // Flags:
 //   --only <id>   regenerate a single preset (fast iteration on framing)
+//   --wide        render 5:3 posters into public/thumbs/wide/ instead of tiles
 //   --check       don't render; exit 1 if the stamp is stale
 
 import { chromium } from "playwright";
@@ -23,16 +24,23 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Emitted edge, in px. Tiles render at ~150 CSS px, so this is the 2x asset;
-// 1x displays downscale it and there is no second file to keep in sync.
-const SIZE = 320;
-// Supersample factor, applied as the page's deviceScaleFactor.
-const SS = 4;
+const argv = process.argv.slice(2);
+// Two frames, one pipeline. Square TILES are the gallery; 5:3 POSTERS are for
+// anywhere the element appears wide — the landing hero's fallback, an og:image.
+// A poster is NOT a cropped tile: the shader normalizes by min(u_res), so a
+// wide frame reveals more pattern rather than slicing the silhouette off a
+// square one.
+const wide = argv.includes("--wide");
+const SIZE_W = wide ? 1200 : 320;
+const SIZE_H = wide ? 720 : 320;
+// Supersample factor, applied as the page's deviceScaleFactor. Lower for
+// posters purely to keep the backing store sane (3600x2160 as it is).
+const SS = wide ? 3 : 4;
 // Its own port: the dev server may well be running on the configured one.
 const PORT = 5199;
 
-const OUT_DIR = resolve(ROOT, "public/thumbs");
-const STAMP = resolve(ROOT, "scripts/thumbs.stamp.json");
+const OUT_DIR = resolve(ROOT, wide ? "public/thumbs/wide" : "public/thumbs");
+const STAMP = resolve(ROOT, wide ? "scripts/thumbs.wide.stamp.json" : "scripts/thumbs.stamp.json");
 
 // Inputs that change what a thumbnail looks like. The shader is the one that
 // bites: a committed image silently stops matching the app the next time
@@ -47,7 +55,11 @@ const SOURCES = [
 async function stampNow() {
   const hash = createHash("sha256");
   for (const rel of SOURCES) hash.update(await readFile(resolve(ROOT, rel)));
-  return { size: SIZE, supersample: SS, sources: hash.digest("hex").slice(0, 16) };
+  return {
+    size: `${SIZE_W}x${SIZE_H}`,
+    supersample: SS,
+    sources: hash.digest("hex").slice(0, 16),
+  };
 }
 
 async function stampOnDisk() {
@@ -58,7 +70,6 @@ async function stampOnDisk() {
   }
 }
 
-const argv = process.argv.slice(2);
 const only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1] : null;
 
 const current = await stampNow();
@@ -100,7 +111,7 @@ const base = server.resolvedUrls.local[0];
 const browser = await chromium.launch({ args: ["--enable-unsafe-swiftshader"] });
 const page = await browser.newPage({
   deviceScaleFactor: SS,
-  viewport: { width: SIZE + 40, height: SIZE + 40 },
+  viewport: { width: SIZE_W + 40, height: SIZE_H + 40 },
 });
 
 const failures = [];
@@ -120,8 +131,8 @@ if (only && targets.length === 0) {
 
 for (const id of targets) {
   const dataUrl = await page.evaluate(
-    ([presetId, size]) => window.renderThumb(presetId, size),
-    [id, SIZE],
+    ([presetId, w, h]) => window.renderThumb(presetId, w, h),
+    [id, SIZE_W, SIZE_H],
   );
   const bytes = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
   await writeFile(resolve(OUT_DIR, `${id}.webp`), bytes);
@@ -141,4 +152,4 @@ if (failures.length > 0) {
 if (!only) {
   await writeFile(STAMP, JSON.stringify(current, null, 2) + "\n");
 }
-console.log(`\n${targets.length} thumbnail(s) -> public/thumbs/`);
+console.log(`\n${targets.length} ${wide ? "poster" : "thumbnail"}(s) -> ${OUT_DIR.replace(ROOT + "/", "")}/`);

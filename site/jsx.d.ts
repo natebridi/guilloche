@@ -13,7 +13,7 @@ type PatternAttrs = React.DetailedHTMLProps<
   GuillochePatternElement
 > & {
   params?: string;
-  interactive?: "hover" | "off" | "gyro";
+  interactive?: "track" | "hover" | "off" | "gyro";
   "max-dpr"?: number | string;
 };
 
