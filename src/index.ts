@@ -6,6 +6,8 @@ export {
   GuillocheEngine,
   WebGL2UnavailableError,
   type EngineOptions,
+  type ProbeOptions,
+  type ProbeResult,
 } from "./engine/GuillocheEngine";
 export {
   mountGuilloche,

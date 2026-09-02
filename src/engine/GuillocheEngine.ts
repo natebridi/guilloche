@@ -46,6 +46,49 @@ export class WebGL2UnavailableError extends Error {
   }
 }
 
+/** Options for {@link GuillocheEngine.probe}. */
+export interface ProbeOptions {
+  /**
+   * Long edge of the grid the average is taken on. Defaults to the canvas's
+   * own long edge, capped at 1024 — i.e. it measures the plate at (or near)
+   * the resolution it is actually displayed at, which is the only setting that
+   * is correct for FLAT renders. See the note on {@link GuillocheEngine.probe}
+   * before lowering it.
+   */
+  size?: number;
+}
+
+/** What {@link GuillocheEngine.probe} measured. */
+export interface ProbeResult {
+  /** Mean colour in LINEAR light — not display-encoded. Each channel 0..1. */
+  rgb: [number, number, number];
+  /** WCAG relative luminance of that mean colour, 0..1. */
+  lum: number;
+  /**
+   * Standard deviation of per-texel relative luminance, 0..1. Guilloché is
+   * high-frequency and high-contrast by construction, so a plate can sit at a
+   * mid `lum` while local values swing the full range — a single overlay
+   * colour is only safe against a LOW spread.
+   */
+  spread: number;
+  /** The grid the estimate was actually taken on. */
+  width: number;
+  height: number;
+}
+
+// sRGB -> linear, one entry per byte. Averaging display-encoded values is not
+// the same as averaging light: the transfer curve is concave, so the mean of
+// the encoded bytes sits ABOVE the encoding of the true mean and the plate
+// reads lighter than it is. Every reduction in probe() runs on linear values.
+const SRGB_TO_LINEAR = /* @__PURE__ */ (() => {
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const c = i / 255;
+    lut[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+  return lut;
+})();
+
 // Framework-agnostic WebGL2 renderer. It owns its own params map (updated via
 // setParams) so nothing outside needs to touch GL or a shared singleton.
 export interface EngineOptions {
@@ -69,6 +112,13 @@ export class GuillocheEngine {
   // pointer moves it. See u_mouse usage in the fragment shader.
   private mouseX = 0.4;
   private mouseY = 0.4;
+  // Probe target, created on the first probe() and never if there isn't one —
+  // a consumer who only renders pays nothing for this.
+  private probeFbo: WebGLFramebuffer | null = null;
+  private probeRbo: WebGLRenderbuffer | null = null;
+  private probeW = 0;
+  private probeH = 0;
+  private probePixels: Uint8Array | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -136,7 +186,12 @@ export class GuillocheEngine {
     return this.uniformLocations.get(name) ?? null;
   }
 
-  uploadParams(): void {
+  // `resWidth`/`resHeight` default to the canvas's backing store; probe()
+  // passes its own so u_res matches the buffer actually being drawn into.
+  uploadParams(
+    resWidth: number = this.canvas.width,
+    resHeight: number = this.canvas.height,
+  ): void {
     const gl = this.gl;
     gl.useProgram(this.program);
     for (const [key, value] of Object.entries(this.params)) {
@@ -152,7 +207,7 @@ export class GuillocheEngine {
 
     const resLocation = this.getUniformLocation("u_res");
     if (resLocation !== null) {
-      gl.uniform2f(resLocation, this.canvas.width, this.canvas.height);
+      gl.uniform2f(resLocation, resWidth, resHeight);
     }
 
     const mouseLocation = this.getUniformLocation("u_mouse");
@@ -172,6 +227,141 @@ export class GuillocheEngine {
     this.dirty = false;
   }
 
+  /**
+   * Render the CURRENT params off-screen at low resolution and reduce them to
+   * an average colour — for deciding how to treat content laid over the plate.
+   *
+   * On demand and synchronous. It does not disturb what is on the canvas: the
+   * draw goes to its own framebuffer and the dirty flag is left alone, so this
+   * never causes or suppresses an on-screen frame.
+   *
+   * Two things to know about the number it returns:
+   *
+   * - **A FLAT plate's mean depends strongly on the resolution it is measured
+   *   at, and that is not an artifact of the probe — it is true of the canvas.**
+   *   `lineMask` holds every cut open to at least one screen pixel so thin cuts
+   *   stay legible, so below the pattern's Nyquist limit the cuts cover
+   *   proportionally more of the plate and it genuinely renders lighter. A
+   *   dense flat pattern measured 0.61 at a 32px grid and 0.28 at 1024px —
+   *   more than a factor of two. (It is the same effect that makes
+   *   `scripts/thumbs.mjs` supersample 4x.) Hence the native-resolution
+   *   default: a `size` well below the canvas measures a plate nobody is
+   *   looking at. The LIT path builds its own geometry and is nearly immune —
+   *   the same sweep moved it from 0.160 to 0.162 — so `size` is a free
+   *   performance lever there and only there.
+   * - It is a whole-plate mean, and it barely moves with the key light: swinging
+   *   the pointer to five very different azimuths moved a lit plate's luminance
+   *   only 0.121..0.132. Aiming redistributes highlights rather than changing
+   *   the total, which is why probing on a params change is enough.
+   */
+  probe(options: ProbeOptions = {}): ProbeResult {
+    if (this.destroyed) {
+      throw new Error("probe() called on a destroyed engine");
+    }
+    const gl = this.gl;
+    // Native resolution by default — see the flat-mode note above. Capped so a
+    // 4K canvas does not turn an on-demand call into a 30MB readback and an
+    // eight-million-iteration reduction.
+    const nativeLong = Math.max(this.canvas.width, this.canvas.height) || 1;
+    const size = Math.max(1, Math.round(options.size ?? Math.min(nativeLong, 1024)));
+
+    // Match the canvas's aspect. `pPlate` is normalised across the SHORT axis,
+    // so probing at a different aspect frames a different crop of the pattern
+    // than the one on screen — it would average something nobody is looking at.
+    const cw = this.canvas.width || 1;
+    const ch = this.canvas.height || 1;
+    const scale = size / Math.max(cw, ch);
+    const w = Math.max(1, Math.round(cw * scale));
+    const h = Math.max(1, Math.round(ch * scale));
+
+    this.ensureProbeTarget(w, h);
+    const pixels = this.probePixels as Uint8Array;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.probeFbo);
+    gl.viewport(0, 0, w, h);
+    this.uploadParams(w, h);
+    gl.useProgram(this.program);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // The viewport is global state and render() does not set it, so a probe
+    // that left it at w*h would shrink the next on-screen frame into a corner.
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let lSum = 0;
+    let lSqSum = 0;
+    const n = w * h;
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      const lr = SRGB_TO_LINEAR[pixels[o]];
+      const lg = SRGB_TO_LINEAR[pixels[o + 1]];
+      const lb = SRGB_TO_LINEAR[pixels[o + 2]];
+      r += lr;
+      g += lg;
+      b += lb;
+      const lum = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+      lSum += lum;
+      lSqSum += lum * lum;
+    }
+
+    // Relative luminance is linear in the channels, so the luminance of the
+    // mean colour and the mean of the luminances are the same number.
+    const mean = lSum / n;
+    return {
+      rgb: [r / n, g / n, b / n],
+      lum: mean,
+      spread: Math.sqrt(Math.max(0, lSqSum / n - mean * mean)),
+      width: w,
+      height: h,
+    };
+  }
+
+  private ensureProbeTarget(w: number, h: number): void {
+    if (this.probeFbo && this.probeW === w && this.probeH === h) {
+      return;
+    }
+    const gl = this.gl;
+    this.deleteProbeTarget();
+
+    const fbo = gl.createFramebuffer();
+    const rbo = gl.createRenderbuffer();
+    if (!fbo || !rbo) {
+      throw new Error("Failed to create probe target");
+    }
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rbo);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rbo);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteFramebuffer(fbo);
+      gl.deleteRenderbuffer(rbo);
+      throw new Error(`Probe framebuffer incomplete: 0x${status.toString(16)}`);
+    }
+
+    this.probeFbo = fbo;
+    this.probeRbo = rbo;
+    this.probeW = w;
+    this.probeH = h;
+    this.probePixels = new Uint8Array(w * h * 4);
+  }
+
+  private deleteProbeTarget(): void {
+    const gl = this.gl;
+    if (this.probeFbo) gl.deleteFramebuffer(this.probeFbo);
+    if (this.probeRbo) gl.deleteRenderbuffer(this.probeRbo);
+    this.probeFbo = null;
+    this.probeRbo = null;
+    this.probeW = 0;
+    this.probeH = 0;
+    this.probePixels = null;
+  }
+
   // Release the GL context. Browsers cap live WebGL contexts per page (roughly
   // 8-16, oldest evicted), so anything that can mount and unmount — an embed
   // on a long page, a hot-reloaded component — must hand the context back
@@ -180,6 +370,7 @@ export class GuillocheEngine {
     if (this.destroyed) return;
     this.destroyed = true;
     const gl = this.gl;
+    this.deleteProbeTarget();
     gl.deleteProgram(this.program);
     this.uniformLocations.clear();
     gl.getExtension("WEBGL_lose_context")?.loseContext();

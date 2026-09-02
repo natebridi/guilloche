@@ -10,6 +10,13 @@
  * (0.17 → 0.28 → 0.45 → 0.72 → 1.17 → 1.89 → 3.06 → 4.94 → 8rem, each step
  * x1.618). The page's rhythm is those steps and nothing else, which is why
  * there are no bare pixel values below outside of hairlines.
+ *
+ * ARRANGEMENT LIVES IN Landing.tsx, not here. Rows, columns, gaps, gutters and
+ * the two-column folds are Jig `Stack`/`Grid`/`Box` props; what is left in this
+ * file is what Jig has no opinion about — taking an element out of flow, aspect
+ * ratios and clipping, container queries, transitions, borders and ground
+ * colours, and the two grids whose shape Jig's cannot express (a five-across
+ * picker, and an attribute list that has to stay dl/dt/dd).
  */
 
 body {
@@ -18,15 +25,15 @@ body {
   color: var(--color-text-primary);
 }
 
-/* The gutter every full-width band shares. One variable so the top bar, the
-   sections and the footer cannot drift apart. */
-:root {
-  --gutter: var(--spacing-800);
+/* `wrap` is the one flex property Stack does not carry; the install line and
+   the shape switcher both need it once the row runs out of room. */
+.wrap {
+  flex-wrap: wrap;
 }
-@media (max-width: 860px) {
-  :root {
-    --gutter: var(--spacing-500);
-  }
+/* A flex/grid child holding a CodeBlock needs this or the <pre> refuses to
+   shrink and blows the row out sideways. Jig has no width props, so it stays. */
+.min-w-0 {
+  min-width: 0;
 }
 
 /* Small monospace annotations — version, install line, param keys. Not a Jig
@@ -44,79 +51,19 @@ body {
 
 /* --- Top bar / footer ---------------------------------------------------- */
 
-.topbar,
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-500);
-  padding: var(--spacing-500) var(--gutter);
+/* Rules only — every band is a Stack, so rows, gaps and gutters come from Jig.
+   Type and colour come from the Typography preset on each element; Jig sets no
+   global font-family, so text styled only from here falls back to the UA
+   serif. */
+.topbar {
   border-bottom: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
 }
-.footer {
-  border-bottom: none;
-  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
-  flex-wrap: wrap;
-}
-.topbar-mark {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-400);
-}
-.topbar-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-600);
-}
-/* Type and colour come from the Typography preset on the element itself; Jig
-   sets no global font-family, so text styled only from here fell back to the
-   UA serif. */
-
-/* --- Sections ------------------------------------------------------------ */
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-700);
-  padding: var(--spacing-700) var(--gutter) var(--spacing-800);
-}
-.section-head,
-.example-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-400);
-}
+.footer,
 .reference {
   border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
 }
 
 /* --- Hero ---------------------------------------------------------------- */
-
-.hero {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-700);
-  padding: var(--spacing-800) var(--gutter);
-}
-.hero-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-500);
-  flex: 0 0 26rem;
-}
-.hero-plate {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-400);
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.plate-controls {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-200);
-}
 
 /* The plate: a placed object, not a bleed. The hairline is what stops a dark
    preset from dissolving into the page ground. */
@@ -126,14 +73,57 @@ body {
   background: var(--color-surfaces-card);
   box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.22);
 }
-.hero-plate .plate {
+.plate-frame .plate {
   aspect-ratio: 5 / 3;
+  position: relative;
+}
+/* Positioning context for the overlay, and the CONTAINER the title is sized
+   against — `cqi` on .hero-title resolves to a percentage of this box's inline
+   size, which is what "as large as the plate allows" means in practice. */
+.plate-frame {
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+}
+/* Layers of one stacked plate, painted bottom-first in DOM order. */
+.plate-layer {
+  position: absolute;
+  inset: 0;
+}
+
+
+.hero-title {
+    position: absolute;
+    top: -0.125em;
+    /*left: calc(50cqi - 50%);*/
+    place-self: center;
+    font-size: 28cqi;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+    color: var(--color-text-primary);
+    transition: color 0.35s ease;
+}
+/* The description panel, filled with the plate's own measured colour. */
+.hero-blurb {
+  max-width: 80%;
+  text-wrap: balance;
+  border-radius: var(--radius-500);
+  background: var(--color-surfaces-card);
+  color: var(--color-text-primary);
+  backdrop-filter: url(#lg);
+  position: absolute;
+  bottom: var(--spacing-500);
+  place-self: center;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease;
 }
 /* The element ships `:host { width: 100%; aspect-ratio: 1 / 1 }`, which is the
    right default for a bare embed and the wrong one inside a frame that already
    has a shape. Outer-document rules beat `:host`, so this is where a plate
    tells the pattern to fill it instead of imposing a square. */
 .plate > guilloche-pattern,
+.plate-layer > guilloche-pattern,
 .closing-bg > guilloche-pattern,
 .shape > guilloche-pattern {
   display: block;
@@ -149,69 +139,44 @@ body {
 
 /* --- Hero carousel transition -------------------------------------------- */
 
-/* One live element slides out, swaps params while invisible, then slides back
-   in from the opposite edge. `slide-in` is the off-stage position and is
-   applied with transitions suppressed, so only the exit and the entrance
-   animate — see useSlideCarousel. */
-.slide {
+/* The stack defocuses, swaps params while it is unreadable, and pulls back
+   into focus. `focus-in` is the defocused state and is applied with transitions
+   suppressed, so only the exit and the entrance animate — see usePhaseCarousel.
+   The filter is on the plate alone, so the overlay stays sharp throughout. */
+.focus {
   transition:
-    opacity 0.22s ease,
-    transform 0.22s ease;
+    filter 0.3s ease,
+    opacity 0.3s ease;
 }
-.slide-out {
-  opacity: 0;
+.focus-out,
+.focus-in {
+  filter: blur(24px);
+  opacity: 0.35;
 }
-.slide-out.slide-fwd {
-  transform: translateX(-4%);
-}
-.slide-out.slide-back {
-  transform: translateX(4%);
-}
-.slide-in {
-  opacity: 0;
+.focus-in {
   transition: none;
 }
-.slide-in.slide-fwd {
-  transform: translateX(4%);
-}
-.slide-in.slide-back {
-  transform: translateX(-4%);
+.focus-idle {
+  filter: blur(0);
+  opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .slide {
+  .focus {
     transition: opacity 0.12s ease;
   }
-  .slide-out,
-  .slide-in {
-    transform: none;
+  .focus-out,
+  .focus-in {
+    filter: none;
+    opacity: 0;
   }
 }
 
 /* --- Usage examples ------------------------------------------------------ */
 
-.example {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-700);
-}
-/* Alternating sides: the media leads in the first example and follows in the
-   second, so three demos in a row read as an argument rather than a grid. */
-.example-media-first .example-plate {
-  order: -1;
-}
-.example-stacked {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--spacing-500);
-}
-.example-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-500);
-  flex: 1 1 auto;
-  min-width: 0;
-}
+/* Alternating sides is DOM order now. `.example-media-first` reversed it with
+   `order: -1` on a plate that was ALREADY the first child, and the narrow
+   breakpoint reset it to `order: 0` — both were no-ops, so both are gone along
+   with the class. */
 
 /* --- Preset picker ------------------------------------------------------- */
 
@@ -269,16 +234,6 @@ body {
 
 /* --- Param controls ------------------------------------------------------ */
 
-.param-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-300);
-}
-.param-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-500);
-}
 /* A fixed lane so the control groups line up down the column regardless of how
    long each label is. Wide enough for the longest of them ("Offset") now that
    these are the editor's words rather than two-letter url keys. */
@@ -289,13 +244,6 @@ body {
 
 /* --- Shape switcher ------------------------------------------------------ */
 
-.shape-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--spacing-500);
-}
 /* Stable dimensions: the pattern changes size and shape inside this box, so
    nothing below it moves when the buttons are pressed. The height tracks the
    viewport rather than being pinned at 26rem — at 430px the stage was still
@@ -372,18 +320,6 @@ body {
   color: var(--color-text-muted);
 }
 
-.code-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-600);
-}
-.code-col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-400);
-  min-width: 0;
-}
-
 /* --- Closing band -------------------------------------------------------- */
 
 /* The one full-bleed pattern on the page. Black Card is deliberately near
@@ -409,33 +345,13 @@ body {
 
 /* --- Narrow --------------------------------------------------------------- */
 
-@media (max-width: 860px) {
-  .hero,
-  .example {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--spacing-500);
-  }
-  .hero {
-    padding-block: var(--spacing-700) var(--spacing-600);
-  }
-  .hero-copy {
-    flex: initial;
-  }
-  .hero-plate .plate {
-    aspect-ratio: 5 / 3;
-  }
-  /* On one column the media leads every example — the heading still comes
-     first in the reading order because .example-body owns it. */
+/* What survives Jig taking the folds: the attribute list, which cannot be a
+   Grid without losing dl/dt/dd, and the shape stage's height. Pinned to Jig's
+   own `lg` (1024px) rather than the page's old hand-rolled 860, so the whole
+   page folds at ONE width. */
+@media (max-width: 1023.98px) {
   .example-plate {
     flex: initial;
-    order: 0;
-  }
-  .example-media-first .example-plate {
-    order: 0;
-  }
-  .section {
-    gap: var(--spacing-600);
   }
   .attr {
     grid-template-columns: 1fr auto;
@@ -446,10 +362,6 @@ body {
   }
   .attr-default {
     text-align: right;
-  }
-  .code-pair {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-600);
   }
   .shape-stage {
     height: 16rem;

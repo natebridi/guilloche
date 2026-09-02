@@ -14,7 +14,11 @@
 // guard on the registration alone is not enough.
 
 import { mountGuilloche, type MountHandle } from "./engine/mount";
-import { WebGL2UnavailableError } from "./engine/GuillocheEngine";
+import {
+  WebGL2UnavailableError,
+  type ProbeOptions,
+  type ProbeResult,
+} from "./engine/GuillocheEngine";
 import type { GyroState } from "./engine/pointerInput";
 import { schemaDefaults } from "./schema";
 import { decode } from "./urlState";
@@ -33,6 +37,13 @@ export interface GuillochePatternElement extends HTMLElement {
    * built-in prompt via `::part(gyro-button)`.
    */
   requestGyro(): Promise<GyroState>;
+  /**
+   * Average colour of the pattern as currently configured, for styling content
+   * laid over it. Returns null before the element has a GL context — it is
+   * allocated lazily on first intersection, so a probe from a script that runs
+   * while the element is still off-screen has nothing to measure yet.
+   */
+  probe(options?: ProbeOptions): ProbeResult | null;
 }
 
 const TEMPLATE = `
@@ -120,6 +131,10 @@ function buildClass(): CustomElementConstructor {
 
     requestGyro(): Promise<GyroState> {
       return this.#handle?.requestGyro() ?? Promise.resolve("unsupported");
+    }
+
+    probe(options?: ProbeOptions): ProbeResult | null {
+      return this.#handle?.engine.probe(options) ?? null;
     }
 
     // Reflect the two string attributes as properties, so frameworks that set

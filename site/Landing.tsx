@@ -1,38 +1,73 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  Box,
   CodeBlock,
+  Grid,
   Icon,
   IconButton,
   Link,
+  Stack,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@jig-ui/react";
-import { PRESETS, findPreset } from "../src/presets";
+import '@jig-ui/react/styles.css';                    // required
+import { findPreset } from "../src/presets";
+import { HERO_SETS, layerParams, layerStyle } from "./heroSets";
 import { SCHEMA } from "../src/schema";
-import { paramsString, useSlideCarousel, useTweenedParams } from "./patternDemo";
+import type { GuillochePatternElement } from "../src/element";
+import {
+  paramsString,
+  usePhaseCarousel,
+  usePlateTone,
+  useTweenedParams,
+} from "./patternDemo";
 
-// Preset ids are read from PRESETS rather than written out here, so the page
-// cannot drift from the gallery the way the old one had — it still referenced
-// `pr=rosette`, `pr=barleycorn` and `pr=certificate`, none of which have
-// existed since TASK 9, and decode() silently ignores an unknown `pr`, so four
-// samples were quietly rendering identical defaults.
-const HERO_IDS = PRESETS.map((p) => p.id);
+/**
+ * The page gutter, as a Jig responsive spacing value.
+ *
+ * This is what the old `--gutter` custom property did, expressed on Jig's own
+ * scale and breakpoints rather than as a hand-rolled variable plus a media
+ * query. Every full-width band spreads it, so the top bar, the sections and the
+ * footer cannot drift apart.
+ */
+const GUTTER = { xs: "500", lg: "800" } as const;
+
+/**
+ * The shape of a two-column example row, and the point at which it folds to one.
+ *
+ * Jig's breakpoints are 480/768/1024/1280; the page's old hand-rolled one was
+ * 860, which is none of them. Folding at `lg` keeps a single set of breakpoints
+ * on the page, and it suits the content — a 32rem plate beside a column of copy
+ * wants more than 860px to read as a row.
+ */
+const ROW = { xs: "column", lg: "row" } as const;
+const ROW_ALIGN = { xs: "stretch", lg: "center" } as const;
+const ROW_SPACING = { xs: "500", lg: "700" } as const;
 
 // A curated subset for the picker: enough range to show the gallery is varied
 // without a row of thumbnails wide enough to need its own scroll container.
-const PICKER_IDS = ["hammered-copper", "golden-record", "peacock", "silver-star", "tiger"];
+const PICKER_IDS = ["hammered-copper", "golden-record", "cornfield", "silver-star", "tiger"];
 
 // ---------------------------------------------------------------------------
 
 function TopBar() {
   return (
-    <header className="topbar">
-      <div className="topbar-mark">
+    <Stack
+      as="header"
+      className="topbar"
+      direction="row"
+      align="center"
+      justify="between"
+      spacing="500"
+      px={GUTTER}
+      py="500"
+    >
+      <Stack direction="row" align="baseline" spacing="400">
         <Typography with="display06">Guilloché</Typography>
         <span className="mono-note">v0.1.0</span>
-      </div>
-      <nav className="topbar-nav">
+      </Stack>
+      <Stack as="nav" direction="row" align="center" spacing="600">
         <Link href="https://www.npmjs.com/package/@natebridi/guilloche" with="body01">
           npm
         </Link>
@@ -49,51 +84,93 @@ function TopBar() {
               control here that has no text beside it. */}
           <Icon icon="github-logo" size="1.25rem" />
         </Link>
-      </nav>
-    </header>
+      </Stack>
+    </Stack>
   );
 }
 
 function Hero() {
-  const { index, phase, direction, next, prev } = useSlideCarousel(HERO_IDS.length);
-  const preset = findPreset(HERO_IDS[index]);
+  const { index, phase, next, prev } = usePhaseCarousel(HERO_SETS.length);
+  const set = HERO_SETS[index];
+  // The bottom layer carries the tone. Upper layers sit over it, so their own
+  // average is not what the overlay is sitting on.
+  const baseRef = useRef<GuillochePatternElement | null>(null);
+  const base = layerParams(set.layers[0]);
+  const tone = usePlateTone(baseRef, base);
 
   return (
-    <section className="hero">
-      <div className="hero-copy">
-        <Typography as="h1" with="display01">
+    <Stack
+      as="section"
+      align="center"
+      spacing="500"
+      px={GUTTER}
+      py={{ xs: "600", lg: "700" }}
+      style={{ maxWidth: '70rem', marginInline: 'auto' }}
+    >
+      <div className="plate-frame">
+        <div className={`plate focus focus-${phase}`}>
+          {/* Keyed by POSITION, never by set id. A key carrying the set id
+              re-keys every layer on every step, which tears down each WebGL
+              context and builds a new one — the expensive thing, and the one
+              the per-page context cap cannot afford. Keyed by index, layer 0
+              is the same element across sets and merely changes its `params`;
+              only a set with a different LAYER COUNT mounts or unmounts one. */}
+          {set.layers.map((layer, i) => (
+            <div className="plate-layer" key={i} style={layerStyle(layer)}>
+              <guilloche-pattern
+                ref={i === 0 ? baseRef : undefined}
+                params={i === 0 ? base : layerParams(layer)}
+              />
+            </div>
+          ))}
+        </div>
+
+        <Typography
+          as="h1"
+          with="display01"
+          className="hero-title"
+          style={{ color: tone?.ink }}
+        >
           Guilloché
         </Typography>
-        <Typography as="p" with="body02" className="lead">
-          The engraved pattern on watch dials and banknotes, rendered live in WebGL2 as
-          one custom element.
-        </Typography>
-        <Link
-          href="/create"
-          variant="smoke"
-          size="lg"
-          icon="arrow-right"
-          iconPosition="end"
+
+        <Box
+          className="hero-blurb"
+          px="500"
+          py="400"
+          style={{ backgroundColor: `rgb(from ${tone?.css} r g b / 0.5)`, color: tone?.inkBody }}
         >
-          Create your guilloché
-        </Link>
-        <span className="mono-note">npm i @natebridi/guilloche</span>
+          <Typography as="p" with="display06" style={{ color: tone?.inkBody }}>
+            Mesmerizing engraved patterns, available as a fully-customizable shader.
+          </Typography>
+        </Box>
       </div>
 
-      <div className="hero-plate">
-        {/* One live element for the whole carousel. `key` is deliberately NOT
-            the preset id: re-keying would tear down and rebuild the GL context
-            on every slide, which is both the expensive thing and the one thing
-            the context budget cannot afford. */}
-        <div className={`plate slide slide-${phase} slide-${direction > 0 ? "fwd" : "back"}`}>
-          <guilloche-pattern params={paramsString({}, preset?.id)} />
-        </div>
-        <div className="plate-controls">
-          <IconButton icon="caret-left" label="Previous pattern" onClick={prev} />
-          <IconButton icon="caret-right" label="Next pattern" onClick={next} />
-        </div>
-      </div>
-    </section>
+      <Stack direction="row" justify="center" spacing="200">
+        <IconButton icon="caret-left" size="lg" label="Previous pattern" onClick={prev} />
+        <IconButton icon="caret-right" size="lg" label="Next pattern" onClick={next} />
+      </Stack>
+
+      <Stack className="wrap" direction="row" align="baseline" justify="center" spacing="300">
+        <Typography as="span" with="body01" tone="secondary">
+          Install package:
+        </Typography>
+        <span className="mono-note">npm i @natebridi/guilloche</span>
+      </Stack>
+
+      <svg width="0" height="0">
+        <filter id="lg">
+          <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise" />
+          <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.5 0" in="noise" result="softNoise" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blurred" />
+          <feDisplacementMap in="blurred" in2="softNoise" scale="20" xChannelSelector="R" yChannelSelector="G" result="refracted" />
+          <feSpecularLighting in="softNoise" surfaceScale="5" specularConstant="0.25" specularExponent="60" lighting-color="#ffffff" result="light">
+            <fePointLight x="-5000" y="-10000" z="20000" />
+          </feSpecularLighting>
+          <feComposite in="light" in2="refracted" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" />
+        </filter>
+      </svg>
+    </Stack>
   );
 }
 
@@ -101,14 +178,16 @@ function PresetExample() {
   const [id, setId] = useState(PICKER_IDS[0]);
 
   return (
-    <div className="example example-media-first">
+    <Stack direction={ROW} align={ROW_ALIGN} spacing={ROW_SPACING}>
       <div className="plate example-plate">
         <guilloche-pattern params={paramsString({}, id)} />
       </div>
-      <div className="example-body">
+      <Stack className="min-w-0" spacing="500" align="start" grow>
         <Typography as="h3" with="display04">
           Ready-made presets
         </Typography>
+        {/* Five across, which is not a count Jig's Grid can take — `columns`
+            accepts only the divisors of 24 — so this one stays hand-rolled. */}
         <div className="picker" role="group" aria-label="Preset">
           {PICKER_IDS.map((presetId) => {
             const active = presetId === id;
@@ -134,8 +213,8 @@ function PresetExample() {
           })}
         </div>
         <CodeBlock>{`<guilloche-pattern params="v1&pr=${id}"></guilloche-pattern>`}</CodeBlock>
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   );
 }
 
@@ -175,8 +254,8 @@ function ParamExample() {
   const shown = paramsString({ ...fixed, amp1, twist, offset });
 
   return (
-    <div className="example">
-      <div className="example-body">
+    <Stack direction={ROW} align={ROW_ALIGN} spacing={ROW_SPACING}>
+      <Stack className="min-w-0" spacing="500" align="start" grow>
         <Typography as="h3" with="display04">
           Build your own
         </Typography>
@@ -185,8 +264,8 @@ function ParamExample() {
           params property, and any change is immediately rendered.
         </Typography>
 
-        <div className="param-rows">
-          <div className="param-row">
+        <Stack spacing="300">
+          <Stack direction="row" align="center" spacing="500">
             <Typography as="span" with="body01" tone="secondary" className="param-key">
               {paramLabel("amp1")}
             </Typography>
@@ -201,8 +280,8 @@ function ParamExample() {
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
-          </div>
-          <div className="param-row">
+          </Stack>
+          <Stack direction="row" align="center" spacing="500">
             <Typography as="span" with="body01" tone="secondary" className="param-key">
               {paramLabel("twist")}
             </Typography>
@@ -217,8 +296,8 @@ function ParamExample() {
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
-          </div>
-          <div className="param-row">
+          </Stack>
+          <Stack direction="row" align="center" spacing="500">
             <Typography as="span" with="body01" tone="secondary" className="param-key">
               {paramLabel("offset")}
             </Typography>
@@ -233,15 +312,15 @@ function ParamExample() {
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
-          </div>
-        </div>
+          </Stack>
+        </Stack>
 
         <CodeBlock>{`params="${shown}"`}</CodeBlock>
-      </div>
+      </Stack>
       <div className="plate example-plate">
         <guilloche-pattern params={live} />
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -256,17 +335,19 @@ function ShapeExample() {
   const current = SHAPES.find((s) => s.id === shape) ?? SHAPES[0];
 
   return (
-    <div className="example example-stacked">
-      <div className="example-head">
+    <Stack spacing="500">
+      <Stack spacing="400">
         <Typography as="h3" with="display04">
           Any size and shape
         </Typography>
         <Typography as="p" with="body01" className="lead">
           Guilloché can be sized to fit any shape.
         </Typography>
-      </div>
+      </Stack>
 
-      <div className="shape-row">
+      {/* `wrap` is the one flex property Stack does not carry, and the code
+          block beside the switcher needs it on a narrow screen. */}
+      <Stack className="wrap" direction="row" align="center" justify="between" spacing="500">
         <ToggleButtonGroup
           aria-label="Shape"
           value={[shape]}
@@ -279,7 +360,7 @@ function ShapeExample() {
           ))}
         </ToggleButtonGroup>
         <CodeBlock>{`guilloche-pattern { ${current.css} }`}</CodeBlock>
-      </div>
+      </Stack>
 
       {/* Fixed height, so switching shape resizes the pattern inside a stable
           box instead of reflowing everything below it.
@@ -291,7 +372,7 @@ function ShapeExample() {
           <guilloche-pattern params="v1&pr=woodgrain" />
         </div>
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -318,11 +399,22 @@ const ATTRIBUTES = [
 
 function Reference() {
   return (
-    <section className="section reference" id="reference">
+    <Stack
+      as="section"
+      className="reference"
+      id="reference"
+      spacing="700"
+      px={GUTTER}
+      pt="700"
+      pb="800"
+    >
       <Typography as="h2" with="display03">
         Attributes
       </Typography>
 
+      {/* Stays a hand-rolled grid: Grid places `Box` children, and Box will not
+          render as `dt`/`dd`, so adopting it here would cost the list its
+          dl/dt/dd semantics. */}
       <dl className="attrs">
         {ATTRIBUTES.map((attr) => (
           <div className="attr" key={attr.name}>
@@ -340,8 +432,8 @@ function Reference() {
         ))}
       </dl>
 
-      <div className="code-pair">
-        <div className="code-col">
+      <Grid columns={{ xs: 1, lg: 2 }} spacing="600">
+        <Stack className="min-w-0" spacing="400">
           <Typography as="h3" with="display05">
             Fallback
           </Typography>
@@ -352,8 +444,8 @@ function Reference() {
           <CodeBlock label="html">{`<guilloche-pattern params="v1&pr=peacock">
   <img src="poster.png" alt="Guilloché pattern" />
 </guilloche-pattern>`}</CodeBlock>
-        </div>
-        <div className="code-col">
+        </Stack>
+        <Stack className="min-w-0" spacing="400">
           <Typography as="h3" with="display05">
             Programmatic
           </Typography>
@@ -366,9 +458,9 @@ function Reference() {
 
 handle.setParams({ twist: 1.2 });
 handle.destroy();`}</CodeBlock>
-        </div>
-      </div>
-    </section>
+        </Stack>
+      </Grid>
+    </Stack>
   );
 }
 
@@ -387,15 +479,24 @@ function ClosingCta() {
 
 function Footer() {
   return (
-    <footer className="footer">
-      <div className="topbar-mark">
+    <Stack
+      as="footer"
+      className="footer wrap"
+      direction="row"
+      align="center"
+      justify="between"
+      spacing="500"
+      px={GUTTER}
+      py="500"
+    >
+      <Stack direction="row" align="baseline" spacing="400">
         <Typography with="display06">Guilloché</Typography>
         <span className="mono-note">MIT · @natebridi/guilloche</span>
-      </div>
-      <Typography as="span" with="caption02" tone="muted" className="footer-by">
+      </Stack>
+      <Typography as="span" with="caption02" tone="muted">
         Built by Nate Bridi
       </Typography>
-    </footer>
+    </Stack>
   );
 }
 
@@ -405,8 +506,8 @@ export function Landing() {
       <TopBar />
       <main>
         <Hero />
-        <section className="section usage">
-          <div className="section-head">
+        <Stack as="section" spacing="700" px={GUTTER} pt="700" pb="800">
+          <Stack spacing="400">
             <Typography as="h2" with="display03">
               Usage
             </Typography>
@@ -414,11 +515,11 @@ export function Landing() {
               Guilloché configurations can be exported from the editor, either as a
               link or an embed code.
             </Typography>
-          </div>
+          </Stack>
           <PresetExample />
           <ParamExample />
           <ShapeExample />
-        </section>
+        </Stack>
         <Reference />
         <ClosingCta />
       </main>

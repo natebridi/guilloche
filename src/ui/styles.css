@@ -158,8 +158,7 @@ body {
   flex: 0 0 320px;
   width: 320px;
   height: 100%;
-  background: var(--rail);
-  border-left: 1px solid var(--hair);
+  background: var(--color-surfaces-body);
   display: flex;
   flex-direction: column;
 }
@@ -249,19 +248,11 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ---- Preset pills ---- */
-.preset-bar {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--rail);
-  border-bottom: 1px solid var(--hair);
-}
-.pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
+/* Presets scroll with everything else. The bar was sticky back when it was a
+   row of name pills and losing it meant losing the only indication of which
+   preset was loaded; the pinned header covers that job now, and its own
+   bottom border went with it — the next .group's border-top was already
+   drawing that line, so the two were stacking into a 2px rule. */
 /* Preset gallery tiles ("View all"). The plate framing — rounded corners, the
    hairline inset, the shadow — is CSS rather than baked into the WebP so it
    themes with the rail and so dark presets like Black Card still show an edge
@@ -329,17 +320,99 @@ body {
   font-size: 12px;
 }
 
+/* ---- Rail header ---- */
+
+/* Export lives here, above the scroll and outside every section, so it cannot
+   read as part of Presets. Darker than the rail so it registers as chrome
+   rather than as another group. */
+.rail-header {
+  flex-shrink: 0;
+  padding: 9px 12px;
+  background: var(--color-surfaces-body);
+}
 .share-row {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
-.share-row > button {
-  flex: 1 1 0;
+/* Sized to their labels, not stretched: in a 320px rail three equal thirds
+   made "JS" a button four times wider than its word. */
+.share-actions {
+  display: flex;
+  gap: 4px;
+}
+.share-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
 }
 /* Spacing only; the type is Jig's. */
 .share-note {
   margin: 8px 0 0;
+}
+
+/* ---- Preset strip ---- */
+
+.preset-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* One row, always. The thumbs share the width so the strip fits whatever the
+   rail is, and the overflow button holds a fixed lane at the end. */
+.preset-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+.preset-thumb-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+.preset-thumb-btn img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Drawn INSIDE the box and over the image: a border would resize the tile and
+   an unoffset outline would be clipped by the neighbouring gap. */
+.preset-thumb-btn[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.preset-thumb-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.preset-more {
+  flex: 0 0 30px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: #1c1f26;
+  color: var(--muted);
+  cursor: pointer;
+}
+.preset-more:hover {
+  color: var(--text);
 }
 
 /* ---- Responsive: stack below 760px, whole page scrolls ---- */

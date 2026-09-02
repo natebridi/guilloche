@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Dialog, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@jig-ui/react";
+import { Button, Dialog, Icon, Separator, Typography } from "@jig-ui/react";
 import { SCHEMA, GROUP_SHOW_WHEN, groupsInOrder } from "../schema";
 import { PRESETS, findPreset, type Preset } from "../presets";
 import { ParamRow } from "./ParamRow";
@@ -11,12 +11,18 @@ interface ControlRailProps {
   onPreset: (preset: Preset) => void;
   onCopyLink: () => Promise<void> | void;
   onCopyEmbed: () => Promise<void> | void;
+  onCopyJs: () => Promise<void> | void;
 }
 
-// How many preset pills the rail itself shows. The rest live behind "View
-// all" — nine pills wrapped to four rows and pushed every control below the
-// fold before you had touched anything.
-const RAIL_PRESETS = 3;
+/** What the three share buttons copy. */
+type CopyKind = "link" | "embed" | "js";
+
+// How many thumbnails the strip shows before the overflow button. Four plus
+// the button is exactly what 320px holds without wrapping; the rest live
+// behind the gallery. Thumbnails rather than name pills because the names are
+// what broke the old layout — "Hammered Copper" is three times the width of
+// "Peacock", so a wrapping row of them could never come out even.
+const RAIL_PRESETS = 4;
 
 export function ControlRail({
   params,
@@ -25,15 +31,16 @@ export function ControlRail({
   onPreset,
   onCopyLink,
   onCopyEmbed,
+  onCopyJs,
 }: ControlRailProps) {
   // Copying is silent otherwise, which reads as a dead button.
-  const [copied, setCopied] = useState<"link" | "embed" | "error" | null>(null);
+  const [copied, setCopied] = useState<CopyKind | "error" | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   const runCopy = useCallback(
-    async (which: "link" | "embed", fn: () => Promise<void> | void) => {
+    async (which: CopyKind, fn: () => Promise<void> | void) => {
       try {
         await fn();
         setCopied(which);
@@ -47,37 +54,99 @@ export function ControlRail({
     [],
   );
 
-  const railPresets = PRESETS.slice(0, RAIL_PRESETS);
-  const railPressed = railPresets.some((p) => p.id === activePreset) ? activePreset : null;
+  // The strip is now the only indicator of which preset is loaded, so the
+  // active one has to be IN it. If it lives behind the gallery, it takes the
+  // last slot rather than being invisible.
+  const railPresets = (() => {
+    const head = PRESETS.slice(0, RAIL_PRESETS);
+    if (!activePreset || head.some((p) => p.id === activePreset)) return head;
+    const active = findPreset(activePreset);
+    return active ? [...head.slice(0, RAIL_PRESETS - 1), active] : head;
+  })();
+  const activeTitle = findPreset(activePreset)?.title ?? "Custom";
 
   return (
     <aside className="rail">
+      {/* Persistent header, OUTSIDE the scrolling body. Export is not a preset
+          concern; sitting inside that section was the whole reason the two
+          read as one confused block. One verb, three destinations — the icon
+          and the word carry the action so each button is a single noun. */}
+      <div className="rail-header">
+        <div className="share-row">
+          <span className="share-label">
+            <Icon icon="copy" />
+            <Typography as="span" with="caption02" tone="secondary">
+              Copy
+            </Typography>
+          </span>
+          <div className="share-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              title="Shareable URL for this pattern"
+              onClick={() => runCopy("link", onCopyLink)}
+            >
+              {copied === "link" ? "Copied" : "Link"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              title="HTML snippet for embedding this pattern on another page"
+              onClick={() => runCopy("embed", onCopyEmbed)}
+            >
+              {copied === "embed" ? "Copied" : "Embed"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              title="The params as a JS object, for driving the engine directly"
+              onClick={() => runCopy("js", onCopyJs)}
+            >
+              {copied === "js" ? "Copied" : "JS"}
+            </Button>
+          </div>
+        </div>
+        {copied === "error" && (
+          <Typography as="p" with="caption01" role="status" className="share-note">
+            Clipboard blocked — the URL bar has the link.
+          </Typography>
+        )}
+      </div>
+      {/* Not `decorative`: the boundary between the export toolbar and the
+          controls below is carried by this rule alone — there is no heading on
+          the header for a screen reader to hear instead. */}
+      <Separator />
+
       <div className="rail-scroll">
         <section className="group preset-bar">
-          <Typography as="h2" with="display06">Presets</Typography>
-          <Stack direction="column" spacing="300" align="start">
-            <ToggleButtonGroup
-              className="pill-row"
-              aria-label="Presets"
-              // Only claim a value the group actually contains. When the active
-              // preset is one of the six behind "View all", the rail's group
-              // holds no matching button and must report an empty selection
-              // rather than a value none of its children answers to.
-              value={railPressed ? [railPressed] : []}
-              // Clicking the lit pill would otherwise clear the group; there is
-              // no "no preset" the user can pick, so it re-applies instead —
-              // which is also how you get back to a preset after editing it.
-              onValueChange={(ids) => {
-                const preset = findPreset(ids[0] ?? railPressed ?? "");
-                if (preset) onPreset(preset);
-              }}
-            >
-              {railPresets.map((preset) => (
-                <ToggleButton key={preset.id} size="sm" value={preset.id}>
-                  {preset.title}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
+          <div className="preset-head">
+            <Typography as="h2" with="display06">Presets</Typography>
+            <Typography as="span" with="caption02" tone="secondary">
+              {activeTitle}
+            </Typography>
+          </div>
+          <div className="preset-strip">
+            {/* Unlike the gallery's tiles these carry no visible title, so the
+                image needs a real alt — it is the button's only name. */}
+            {railPresets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className="preset-thumb-btn"
+                aria-pressed={preset.id === activePreset}
+                title={preset.title}
+                onClick={() => onPreset(preset)}
+              >
+                <img
+                  src={`/thumbs/${preset.id}.webp`}
+                  alt={preset.title}
+                  width={320}
+                  height={320}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </button>
+            ))}
 
             {/* Jig's Dialog composes the open handler onto whatever `trigger`
                 is, and its body is already wrapped in a ScrollArea — so the
@@ -90,9 +159,16 @@ export function ControlRail({
               title="Presets"
               description="Pick one to load it. Everything you have not changed resets to its default."
               trigger={
-                <Button size="sm" variant="ghost">
-                  View all
-                </Button>
+                <button type="button" className="preset-more" aria-label="All presets">
+                  {/* Jig's curated set has no meatball, and Icon takes raw SVG
+                      as children for exactly this case — sized and coloured
+                      like any built-in glyph. */}
+                  <Icon viewBox="0 0 24 24" size="1rem">
+                    <circle cx="5" cy="12" r="1.7" fill="currentColor" />
+                    <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+                    <circle cx="19" cy="12" r="1.7" fill="currentColor" />
+                  </Icon>
+                </button>
               }
             >
               {/* Hand-rolled rather than Jig Buttons: a labelled image tile is
@@ -131,31 +207,7 @@ export function ControlRail({
                 ))}
               </div>
             </Dialog>
-          </Stack>
-          <div className="share-row">
-            <Button
-              size="sm"
-              variant="primary"
-              icon="copy"
-              onClick={() => runCopy("link", onCopyLink)}
-            >
-              {copied === "link" ? "Copied" : "Copy link"}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="copy"
-              title="HTML snippet for embedding this pattern on another page"
-              onClick={() => runCopy("embed", onCopyEmbed)}
-            >
-              {copied === "embed" ? "Copied" : "Copy embed"}
-            </Button>
           </div>
-          {copied === "error" && (
-            <Typography as="p" with="caption01" role="status" className="share-note">
-              Clipboard blocked — the URL bar has the link.
-            </Typography>
-          )}
         </section>
 
         {groupsInOrder().map((group) => {

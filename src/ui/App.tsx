@@ -4,6 +4,7 @@ import { schemaDefaults } from "../schema";
 import { decode, encode } from "../urlState";
 import { presetParams, type Preset } from "../presets";
 import { embedSnippet } from "../embedSnippet";
+import { paramsSnippet } from "../paramsSnippet";
 import { Stage } from "./Stage";
 import { ControlRail } from "./ControlRail";
 
@@ -88,6 +89,13 @@ export function App() {
     );
   }, [params, activePreset]);
 
+  // The params as JS, for driving the engine directly rather than through a
+  // link or the custom element. This is the only export that survives leaving
+  // the URL format behind.
+  const copyJs = useCallback(async () => {
+    await navigator.clipboard?.writeText(paramsSnippet(params));
+  }, [params]);
+
   return (
     <div className="app">
       <Stage engineRef={engineRef} initialParams={initial} params={params} />
@@ -98,6 +106,7 @@ export function App() {
         onPreset={onPreset}
         onCopyLink={copyLink}
         onCopyEmbed={copyEmbed}
+        onCopyJs={copyJs}
       />
     </div>
   );

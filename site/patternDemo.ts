@@ -2,8 +2,9 @@
 // that file stays readable as a page, and out of src/ entirely — this is the
 // website's own machinery, not part of the published package.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { encode } from "../src/urlState";
+import type { GuillochePatternElement } from "../src/element";
 
 /**
  * Build a params string the way the editor's Copy link button does, so the
@@ -16,44 +17,41 @@ export function paramsString(values: Record<string, number>, preset?: string): s
 }
 
 /**
- * Cross-fade state for the hero carousel.
+ * Transition state for the hero carousel.
  *
- * There is one live element, not two: WebGL contexts are capped per page and
- * a second plate purely to cross-fade against would spend a third of the
- * budget on a 200ms transition. So the single plate slides out, swaps its
- * params while invisible, and slides back in from the other side.
+ * There is one live stack of patterns, not two: WebGL contexts are capped per
+ * page and a whole second stack purely to cross-fade against would spend the
+ * budget on a 300ms transition. So the stack defocuses, swaps its params while
+ * it is unreadable, and pulls back into focus.
  *
- * `direction` is what makes it read as motion rather than a blink — the plate
- * always exits toward the arrow that was pressed and enters from the opposite
- * edge.
+ * There is deliberately no `direction` any more — the transition is a
+ * blur/focus rather than a slide, and a blur has no side to come in from.
  */
-export type SlidePhase = "idle" | "out" | "in";
+export type PhasePosition = "idle" | "out" | "in";
 
-export function useSlideCarousel(length: number, durationMs = 220) {
+export function usePhaseCarousel(length: number, durationMs = 300) {
   const [index, setIndex] = useState(0);
-  const [phase, setPhase] = useState<SlidePhase>("idle");
-  const [direction, setDirection] = useState<1 | -1>(1);
+  const [phase, setPhase] = useState<PhasePosition>("idle");
   const timers = useRef<number[]>([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const go = (delta: 1 | -1) => {
     if (phase !== "idle") return; // ignore clicks mid-transition
-    setDirection(delta);
     setPhase("out");
     timers.current.push(
       window.setTimeout(() => {
         setIndex((i) => (i + delta + length) % length);
-        // "in" is applied on the far side with transitions suppressed, then
-        // released on the next frame — otherwise the browser animates the
-        // jump across the frame instead of the entrance.
+        // "in" is the defocused state, applied with transitions suppressed and
+        // released on the next frame — otherwise the browser animates the jump
+        // across the frame instead of the entrance.
         setPhase("in");
         requestAnimationFrame(() => requestAnimationFrame(() => setPhase("idle")));
       }, durationMs),
     );
   };
 
-  return { index, phase, direction, next: () => go(1), prev: () => go(-1) };
+  return { index, phase, next: () => go(1), prev: () => go(-1) };
 }
 
 /**
@@ -109,4 +107,165 @@ export function useTweenedParams(
   }, [targetKey, durationMs]);
 
   return current;
+}
+
+
+// --- Plate tone ------------------------------------------------------------
+
+const linearToSrgb = (c: number) =>
+  c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+
+const clamp01 = (c: number) => Math.min(1, Math.max(0, c));
+const luminance = (r: number, g: number, b: number) =>
+  0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+/** A linear-light triple as a display-space `rgb()` string. */
+function cssFromLinear([r, g, b]: readonly [number, number, number]): string {
+  const to255 = (c: number) => Math.round(clamp01(linearToSrgb(clamp01(c))) * 255);
+  return `rgb(${to255(r)} ${to255(g)} ${to255(b)})`;
+}
+
+/** WCAG contrast ratio between two relative luminances. */
+const contrast = (a: number, b: number) =>
+  (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+/**
+ * How much of the plate's own hue survives into the ink. The full-strength
+ * chromaticity of a copper or peacock plate is far too saturated to set a
+ * headline in; this pulls it most of the way back toward neutral so the title
+ * reads as *tinted by* the pattern rather than coloured with it.
+ */
+const INK_TINT = 0.75;
+
+/** Large-text contrast target. WCAG AA for >=24px is 3:1; this leaves margin. */
+const TARGET_RATIO = 3.6;
+/** Body-text contrast target. WCAG AA for normal text is 4.5:1. */
+const TARGET_RATIO_BODY = 4.5;
+
+/**
+ * Build an ink that carries the plate's hue at a luminance that clears
+ * TARGET_RATIO against it.
+ *
+ * Deliberately NOT a pick between two constants. Every preset in the gallery
+ * is dark (mean luminance 0.006..0.19), so a light/dark decision returns the
+ * same near-white for all of them and tells you nothing about the pattern —
+ * which is the whole point of measuring it.
+ */
+function inkForPlate(
+  mean: readonly [number, number, number],
+  plateLum: number,
+  ratio: number = TARGET_RATIO,
+): { ink: string; ratio: number } {
+  // Required luminance in each direction, from the contrast formula solved for
+  // the text term. Lighter text: L = r*(Lbg + 0.05) - 0.05.
+  const lighter = ratio * (plateLum + 0.05) - 0.05;
+  const darker = (plateLum + 0.05) / ratio - 0.05;
+  // Prefer going lighter; only go dark when lighter cannot reach gamut.
+  const goLight = lighter <= 1;
+  const target = clamp01(goLight ? Math.max(lighter, 0.5) : Math.max(darker, 0));
+
+  const meanLum = luminance(mean[0], mean[1], mean[2]);
+  let rgb: [number, number, number];
+  if (meanLum < 1e-4) {
+    // A plate with no measurable light (Black Card sits near here) has no
+    // reliable chromaticity to borrow — take the neutral.
+    rgb = [target, target, target];
+  } else {
+    const scale = target / meanLum;
+    rgb = [mean[0] * scale, mean[1] * scale, mean[2] * scale];
+    // Damp toward the neutral of the same luminance.
+    rgb = rgb.map((c) => target + (c - target) * INK_TINT) as [number, number, number];
+    // Bring it back into gamut by desaturating further, not by clipping a
+    // channel — clipping shifts the hue, desaturating does not.
+    const peak = Math.max(rgb[0], rgb[1], rgb[2]);
+    if (peak > 1 && peak > target) {
+      const k = (1 - target) / (peak - target);
+      rgb = rgb.map((c) => target + (c - target) * k) as [number, number, number];
+    }
+  }
+
+  const inkLum = luminance(clamp01(rgb[0]), clamp01(rgb[1]), clamp01(rgb[2]));
+  return { ink: cssFromLinear(rgb), ratio: contrast(plateLum, inkLum) };
+}
+
+export interface PlateTone {
+  /** Mean colour of the plate in LINEAR light, each channel 0..1. */
+  rgb: [number, number, number];
+  /** That same mean colour as a display-space `rgb()` string, ready for CSS. */
+  css: string;
+  /** Mean relative luminance of the plate, 0..1. */
+  lum: number;
+  /**
+   * Per-pixel luminance spread. On these patterns it comes back roughly EQUAL
+   * to `lum`, meaning local values swing about as much as the average itself —
+   * no single ink is right everywhere on the plate.
+   */
+  spread: number;
+  /** An ink carrying the plate's hue, at the LARGE-text contrast target. */
+  ink: string;
+  /**
+   * The same, at the body-text target. The blurb panel is filled with `css`,
+   * whose luminance is `lum` by construction — so text on it needs the same
+   * 4.5:1 any body copy does, and `ink` (tuned for a display-size title) is
+   * not enough on its own.
+   */
+  inkBody: string;
+  /** Contrast ratio `ink` achieves against `lum`. Large text needs 3:1. */
+  ratio: number;
+}
+
+/**
+ * Measure the plate behind an overlay: its average colour, and an ink drawn
+ * from that colour which stays legible against it.
+ *
+ * Re-probes whenever `params` changes, which is exactly the granularity the
+ * value has: the probe is a whole-plate mean and the key light barely moves it
+ * (swinging the pointer across five azimuths shifted a lit plate only
+ * 0.121..0.132), so there is nothing to gain from tracking the pointer.
+ *
+ * The retry loop is not defensive padding. `<guilloche-pattern>` allocates its
+ * GL context lazily on first intersection, so `probe()` returns null until the
+ * element has been on screen once — a single attempt on mount would measure
+ * nothing and leave the overlay on its fallback colour forever.
+ */
+export function usePlateTone(
+  ref: RefObject<GuillochePatternElement | null>,
+  params: string,
+): PlateTone | null {
+  const [tone, setTone] = useState<PlateTone | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let raf = 0;
+    let tries = 0;
+
+    const attempt = () => {
+      if (cancelled) return;
+      const probed = ref.current?.probe() ?? null;
+      if (!probed) {
+        if (tries++ < 180) raf = requestAnimationFrame(attempt);
+        return;
+      }
+      const mean = probed.rgb as [number, number, number];
+      const { ink, ratio } = inkForPlate(mean, probed.lum);
+      const body = inkForPlate(mean, probed.lum, TARGET_RATIO_BODY);
+      setTone({
+        rgb: mean,
+        css: cssFromLinear(mean),
+        lum: probed.lum,
+        spread: probed.spread,
+        ink,
+        inkBody: body.ink,
+        ratio,
+      });
+    };
+
+    raf = requestAnimationFrame(attempt);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [ref, params]);
+
+  return tone;
 }
