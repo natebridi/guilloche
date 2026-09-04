@@ -44,6 +44,18 @@ export interface GuillochePatternElement extends HTMLElement {
    * while the element is still off-screen has nothing to measure yet.
    */
   probe(options?: ProbeOptions): ProbeResult | null;
+  /** See GuillocheEngine.setLightFrame. No-op before the GL context exists. */
+  setLightFrame(x: number, y: number, scale: number): void;
+  /**
+   * Compute this element's light frame from `base`'s box and adopt it, so a
+   * stack of plates shares one lamp. Call it again on resize — the frame is
+   * derived from live layout, not stored.
+   *
+   * Affects the key light only; the pattern keeps its own pan/centre/scale.
+   * Pass the element the stack should be lit relative to; passing `this`
+   * restores the identity frame.
+   */
+  syncLightFrameTo(base: Element): void;
 }
 
 const TEMPLATE = `
@@ -135,6 +147,25 @@ function buildClass(): CustomElementConstructor {
 
     probe(options?: ProbeOptions): ProbeResult | null {
       return this.#handle?.engine.probe(options) ?? null;
+    }
+
+    setLightFrame(x: number, y: number, scale: number): void {
+      this.#handle?.setLightFrame(x, y, scale);
+    }
+
+    syncLightFrameTo(base: Element): void {
+      const b = base.getBoundingClientRect();
+      const c = this.getBoundingClientRect();
+      const unit = Math.min(b.width, b.height);
+      if (unit <= 0) return;
+      // Plate space measures the SHORT axis, so the reference unit is the
+      // base's short side and the scale is a ratio of short sides.
+      const scale = Math.min(c.width, c.height) / unit;
+      const dx = (c.left + c.right) / 2 - (b.left + b.right) / 2;
+      // Negated: gl_FragCoord.y points UP and a DOM rect's y points DOWN, so a
+      // child sitting above the base needs a POSITIVE offset in plate space.
+      const dy = -((c.top + c.bottom) / 2 - (b.top + b.bottom) / 2);
+      this.setLightFrame(dx / unit, dy / unit, scale);
     }
 
     // Reflect the two string attributes as properties, so frameworks that set

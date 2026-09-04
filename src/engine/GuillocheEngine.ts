@@ -112,6 +112,11 @@ export class GuillocheEngine {
   // pointer moves it. See u_mouse usage in the fragment shader.
   private mouseX = 0.4;
   private mouseY = 0.4;
+  // The shared LIGHT frame — see setLightFrame(). Identity means "I am the
+  // only plate in the room".
+  private lightFrameX = 0;
+  private lightFrameY = 0;
+  private lightFrameScale = 1;
   // Probe target, created on the first probe() and never if there isn't one —
   // a consumer who only renders pays nothing for this.
   private probeFbo: WebGLFramebuffer | null = null;
@@ -175,6 +180,27 @@ export class GuillocheEngine {
     }
   }
 
+   /**
+   * Tell this plate where it sits relative to the other plates it shares a
+   * LIGHT with, so a stack is lit by one lamp at one place in the room.
+   *
+   * `scale` is this element's short axis measured in the reference element's
+   * short axes; `x`/`y` are its centre's displacement from the reference's, in
+   * those same units, with **y pointing up** (plate space, not DOM space).
+   *
+   * Affects the key light ONLY. The pattern keeps this element's own pan,
+   * centre and scale, so layers stay free to be arranged independently.
+   *
+   * The identity frame (0, 0, 1) is the single-plate behaviour and is exact —
+   * every existing render is unaffected until something calls this.
+   */
+  setLightFrame(x: number, y: number, scale: number): void {
+    this.lightFrameX = x;
+    this.lightFrameY = y;
+    this.lightFrameScale = scale;
+    this.markDirty();
+  }
+
   isDirty(): boolean {
     return this.dirty;
   }
@@ -213,6 +239,18 @@ export class GuillocheEngine {
     const mouseLocation = this.getUniformLocation("u_mouse");
     if (mouseLocation !== null) {
       gl.uniform2f(mouseLocation, this.mouseX, this.mouseY);
+    }
+
+    // Uploaded here rather than through the params map for the same reason
+    // u_mouse is: it is engine state set by the host, not a pattern parameter,
+    // so it has no business in the schema, the rail or a share link.
+    const lightFrameOffset = this.getUniformLocation("u_lightFrameOffset");
+    if (lightFrameOffset !== null) {
+      gl.uniform2f(lightFrameOffset, this.lightFrameX, this.lightFrameY);
+    }
+    const lightFrameScale = this.getUniformLocation("u_lightFrameScale");
+    if (lightFrameScale !== null) {
+      gl.uniform1f(lightFrameScale, this.lightFrameScale);
     }
   }
 

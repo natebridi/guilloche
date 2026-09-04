@@ -128,6 +128,8 @@ export const SCHEMA: ParamDef[] = [
   { key: "centerY", label: "Pan Y", group: "Layout", type: "float", min: -1, max: 1, step: 0.01, default: 0, urlKey: "cy", display: { kind: "fraction" } },
   { key: "density", label: "Density", group: "Layout", type: "int", min: 6, max: 90, step: 1, default: 28, urlKey: "d" },
   { key: "offset", label: "Offset", group: "Layout", type: "float", min: 0, max: 0.2, step: 0.002, default: 0, urlKey: "of", display: { kind: "percent" } },
+  { key: "cutoff", label: "Cutoff", group: "Layout", type: "float", min: 0, max: 1.5, step: 0.005, default: 0, urlKey: "co", display: { kind: "percent" } },
+  { key: "border", label: "Border Cut", group: "Layout", type: "float", min: 0, max: 0.05, step: 0.001, default: 0, urlKey: "bo", display: { kind: "percent" } },
   { key: "cutWidth", label: "Cut Width", group: "Layout", type: "float", min: 0.05, max: 1, step: 0.01, default: 0.35, urlKey: "cw", display: { kind: "fraction" } },
   { key: "cutterMode", label: "Cutter", group: "Layout", type: "enum", min: 0, max: 1, step: 1, default: 1, options: ["Relative", "Fixed"], urlKey: "cm" },
 
@@ -177,6 +179,8 @@ export const SCHEMA: ParamDef[] = [
   { key: "envStrength", label: "Env Strength", group: "Lighting", type: "float", min: 0, max: 2, step: 0.01, default: 0.7, urlKey: "es", display: { kind: "multiplier" } },
   { key: "envWarmth", label: "Env Warmth", group: "Lighting", type: "float", min: -1, max: 1, step: 0.01, default: 0, urlKey: "ew", display: { kind: "fraction" } },
   { key: "lightHeight", label: "Light Height", group: "Lighting", type: "float", min: 0.1, max: 2, step: 0.01, default: 0.4, urlKey: "lh", display: { kind: "elevation" } },
+  { key: "lightNear", label: "Light Near", group: "Lighting", type: "float", min: 0, max: 1.5, step: 0.01, default: 0, urlKey: "ln", display: { kind: "percent" } },
+  { key: "lightFalloff", label: "Light Falloff", group: "Lighting", type: "float", min: 0, max: 1, step: 0.01, default: 0, urlKey: "lf", display: { kind: "fraction" } },
   { key: "exposure", label: "Exposure", group: "Lighting", type: "float", min: 0.1, max: 3, step: 0.01, default: 1.0, urlKey: "ex", display: { kind: "multiplier" } },
   { key: "keyStrength", label: "Key Strength", group: "Lighting", type: "float", min: 0, max: 2, step: 0.01, default: 1, urlKey: "ks", display: { kind: "multiplier" } },
   { key: "lightHue", label: "Light Hue", group: "Lighting", type: "float", min: 0, max: 1, step: 0.01, default: 0.1, urlKey: "lu", display: { kind: "turns" } },

@@ -269,3 +269,69 @@ export function usePlateTone(
 
   return tone;
 }
+
+
+// --- Shared light ----------------------------------------------------------
+
+/**
+ * Light every pattern in a stack from one lamp, so the layers read as objects
+ * in a single room rather than as separate plates each with its own sun.
+ *
+ * LIGHT ONLY. Each layer keeps its own pan, centre and scale, so a composition
+ * stays free to be arranged — the layers are not windows onto one shared
+ * engraving, which would be a different feature and would take that away.
+ *
+ * The bottom layer is the reference and syncs to itself, which is the identity
+ * frame and therefore a no-op, but it is called anyway so nothing depends on
+ * the first element being special-cased.
+ *
+ * Two things this has to wait for. `setLightFrame` is a no-op until the element
+ * has a GL context, which it allocates lazily on first intersection — hence the
+ * bounded retry on `data-state`. And the frame is derived from live layout, so
+ * a resize invalidates it.
+ */
+export function useSharedLight(
+  containerRef: RefObject<HTMLElement | null>,
+  key: string,
+): void {
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    let cancelled = false;
+    let raf = 0;
+    let tries = 0;
+
+    const sync = (): boolean => {
+      const els = [
+        ...root.querySelectorAll<GuillochePatternElement>("guilloche-pattern"),
+      ];
+      const base = els[0];
+      // All or nothing: lighting half a stack from a base that has not
+      // mounted yet would leave the two halves under different lamps.
+      if (!base || els.some((el) => el.dataset.state !== "ready")) return false;
+      for (const el of els) el.syncLightFrameTo(base);
+      return true;
+    };
+
+    const attempt = () => {
+      if (cancelled) return;
+      if (!sync() && tries++ < 180) raf = requestAnimationFrame(attempt);
+    };
+    raf = requestAnimationFrame(attempt);
+
+    // The hero's layers are all placed in % of this box, so its resize is the
+    // only thing that moves them relative to each other, and therefore the
+    // only thing that changes where each sits relative to the lamp.
+    const ro = new ResizeObserver(() => {
+      sync();
+    });
+    ro.observe(root);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [containerRef, key]);
+}

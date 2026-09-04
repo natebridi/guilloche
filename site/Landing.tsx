@@ -6,6 +6,7 @@ import {
   Icon,
   IconButton,
   Link,
+  Separator,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
@@ -20,6 +21,7 @@ import {
   paramsString,
   usePhaseCarousel,
   usePlateTone,
+  useSharedLight,
   useTweenedParams,
 } from "./patternDemo";
 
@@ -97,6 +99,11 @@ function Hero() {
   const baseRef = useRef<GuillochePatternElement | null>(null);
   const base = layerParams(set.layers[0]);
   const tone = usePlateTone(baseRef, base);
+  // Every layer is lit from the bottom layer's lamp, so a stack reads as one
+  // room. Their patterns stay independent — pan, centre and scale are still
+  // per layer, so sets can be arranged freely.
+  const stackRef = useRef<HTMLDivElement | null>(null);
+  useSharedLight(stackRef, set.id);
 
   return (
     <Stack
@@ -108,7 +115,7 @@ function Hero() {
       style={{ maxWidth: '70rem', marginInline: 'auto' }}
     >
       <div className="plate-frame">
-        <div className={`plate focus focus-${phase}`}>
+        <div ref={stackRef} className={`plate focus focus-${phase}`}>
           {/* Keyed by POSITION, never by set id. A key carrying the set id
               re-keys every layer on every step, which tears down each WebGL
               context and builds a new one — the expensive thing, and the one
@@ -330,51 +337,6 @@ const SHAPES = [
   { id: "circle", label: "Circle", css: "aspect-ratio: 1; width: 340px; border-radius: 50%;" },
 ];
 
-function ShapeExample() {
-  const [shape, setShape] = useState("full");
-  const current = SHAPES.find((s) => s.id === shape) ?? SHAPES[0];
-
-  return (
-    <Stack spacing="500">
-      <Stack spacing="400">
-        <Typography as="h3" with="display04">
-          Any size and shape
-        </Typography>
-        <Typography as="p" with="body01" className="lead">
-          Guilloché can be sized to fit any shape.
-        </Typography>
-      </Stack>
-
-      {/* `wrap` is the one flex property Stack does not carry, and the code
-          block beside the switcher needs it on a narrow screen. */}
-      <Stack className="wrap" direction="row" align="center" justify="between" spacing="500">
-        <ToggleButtonGroup
-          aria-label="Shape"
-          value={[shape]}
-          onValueChange={(v) => setShape(v[0] ?? shape)}
-        >
-          {SHAPES.map((s) => (
-            <ToggleButton key={s.id} size="sm" value={s.id}>
-              {s.label}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-        <CodeBlock>{`guilloche-pattern { ${current.css} }`}</CodeBlock>
-      </Stack>
-
-      {/* Fixed height, so switching shape resizes the pattern inside a stable
-          box instead of reflowing everything below it.
-          The shape class goes on a WRAPPER, not on the element: React renders
-          `className` on a custom element as a literal `classname` attribute,
-          so styling one directly from JSX silently does nothing. */}
-      <div className="shape-stage">
-        <div className={`shape shape-${shape}`}>
-          <guilloche-pattern params="v1&pr=woodgrain" />
-        </div>
-      </div>
-    </Stack>
-  );
-}
 
 const ATTRIBUTES = [
   {
@@ -407,6 +369,7 @@ function Reference() {
       px={GUTTER}
       pt="700"
       pb="800"
+      style={{ maxWidth: '60rem', marginInline: 'auto' }}
     >
       <Typography as="h2" with="display03">
         Attributes
@@ -504,9 +467,10 @@ export function Landing() {
   return (
     <>
       <TopBar />
+      <Separator />
       <main>
         <Hero />
-        <Stack as="section" spacing="700" px={GUTTER} pt="700" pb="800">
+        <Stack as="section" spacing="700" px={GUTTER} pt="700" pb="800" style={{ maxWidth: '60rem', marginInline: 'auto' }}>
           <Stack spacing="400">
             <Typography as="h2" with="display03">
               Usage
@@ -518,11 +482,12 @@ export function Landing() {
           </Stack>
           <PresetExample />
           <ParamExample />
-          <ShapeExample />
         </Stack>
+        <Separator />
         <Reference />
         <ClosingCta />
       </main>
+      <Separator />
       <Footer />
     </>
   );

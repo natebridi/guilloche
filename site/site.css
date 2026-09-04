@@ -49,19 +49,6 @@ body {
   max-width: 46ch;
 }
 
-/* --- Top bar / footer ---------------------------------------------------- */
-
-/* Rules only — every band is a Stack, so rows, gaps and gutters come from Jig.
-   Type and colour come from the Typography preset on each element; Jig sets no
-   global font-family, so text styled only from here falls back to the UA
-   serif. */
-.topbar {
-  border-bottom: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
-}
-.footer,
-.reference {
-  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
-}
 
 /* --- Hero ---------------------------------------------------------------- */
 
@@ -150,7 +137,7 @@ body {
 }
 .focus-out,
 .focus-in {
-  filter: blur(24px);
+  filter: blur(36px);
   opacity: 0.35;
 }
 .focus-in {

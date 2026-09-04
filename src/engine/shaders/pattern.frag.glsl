@@ -29,6 +29,19 @@ uniform float u_keyStrength;
 uniform float u_lightHue;
 uniform float u_lightSat;
 uniform float u_lightHeight;
+uniform float u_lightNear;
+// The SHARED LIGHT FRAME. Maps this element's plate space into a coordinate
+// system shared with other elements, so a stack of plates is lit by ONE lamp
+// at one place in the room. Identity (0,0 / 1) by default.
+//
+// Deliberately scoped to the LIGHT and nothing else. It does not touch `p`:
+// each plate keeps its own pan, centre and scale so a composition can be
+// arranged freely. Sharing the pattern coordinate as well would make every
+// layer a window onto one engraving, which is a different feature and takes
+// the arranging away.
+uniform vec2 u_lightFrameOffset;
+uniform float u_lightFrameScale;
+uniform float u_lightFalloff;
 uniform float u_exposure;
 uniform float u_density;
 uniform float u_cutWidth;
@@ -43,6 +56,24 @@ uniform float u_shininess;
 uniform float u_finish;
 uniform float u_finishFreq;
 uniform float u_offset;
+// CUTOFF: an outer radius where the cutter STOPS, the counterpart to offset's
+// inner hole, plus one bounding cut sitting on it.
+//
+// Works in BOTH modes, which costs nothing: because it masks on length(p)
+// rather than on `coord`, it never touches the grating's own coordinate
+// system, so a linear grating bounded by a circle — the common straight-line-
+// in-a-disc engraving — needs no separate path.
+//
+// Unlike offset, this masks on the RAW radius rather than on the field. The
+// inner hole follows the wavy field on purpose (Task 6.9), but the border is a
+// true circle independent of amplitude and twist, so terminating the grating
+// on a wavy boundary would let cuts wander across it.
+//
+// u_cutoff = 0 is OFF. It cannot default to a large radius instead: p is
+// (pPlate - centre)/scale, so a plate at scale 0.25 reaches |p| ~ 2.8 and any
+// finite default would clip zoomed-out presets.
+uniform float u_cutoff;
+uniform float u_border;
 uniform float u_twist;
 uniform float u_twistWaveAmp;
 uniform float u_twistWaveFreq;
@@ -200,6 +231,39 @@ vec2 phaseGradient(vec2 p, float shift) {
   return dFdCoord * gradCoord + dFdAlong * gradAlong;
 }
 
+// The bounding cut: distance from the border's centre line, and its half
+// width. Both in pattern units — the border is not part of the grating, so it
+// has no local pitch for cutWidth to be a fraction of, and it must not respond
+// to density.
+bool borderOn() {
+  return u_cutoff > 1e-5 && u_border > 1e-6;
+}
+float borderDist(vec2 p) {
+  return abs(length(p) - u_cutoff);
+}
+
+// Where the grating stops. The border straddles this radius; the two overlap
+// over the border's inner half and simply merge, which is how every other
+// overlapping cut in this shader behaves.
+float cutoffMask(vec2 p) {
+  if (u_cutoff <= 1e-5) return 1.0;
+  float r = length(p);
+  float aa = max(fwidth(r) * 1.5, 1e-6);
+  return 1.0 - smoothstep(u_cutoff - aa, u_cutoff + aa, r);
+}
+
+// Everything past the border's OUTER lip is not plate at all — it goes
+// transparent so a layer underneath shows through, which is what lets the
+// border do any work in a composition. Uncut metal outside is still reachable
+// by putting a plain plate below; the reverse is not reachable without this.
+float cutoutAlpha(vec2 p) {
+  if (u_cutoff <= 1e-5) return 1.0;
+  float rOuter = u_cutoff + (u_border > 1e-6 ? 0.5 * u_border : 0.0);
+  float r = length(p);
+  float aa = max(fwidth(r) * 1.5, 1e-6);
+  return 1.0 - smoothstep(rOuter - aa, rOuter + aa, r);
+}
+
 float lineMask(vec2 p, float shift) {
   float c;
   float f = phaseField(p, shift, c);
@@ -220,6 +284,17 @@ float lineMask(vec2 p, float shift) {
   float line = 1.0 - smoothstep(half_ - aa, half_ + aa, d);
   float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f);
   return line * inner;
+}
+
+// The bounding cut as a flat-path line mask. Deliberately NOT multiplied by
+// cutoffMask: it is centred on the cutoff radius, so masking it would shear off
+// its outer half and leave a hard edge where a groove should be.
+float borderMask(vec2 p) {
+  if (!borderOn()) return 0.0;
+  float dB = borderDist(p);
+  float hB = 0.5 * u_border;
+  float aa = max(fwidth(dB), 1e-6);
+  return 1.0 - smoothstep(hB - aa, hB + aa, dB);
 }
 
 // Two soft light strips + dim floor, sampled by a direction:
@@ -290,6 +365,8 @@ void main() {
       vec2 pr = vec2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y); // rotate by -a
       line = max(line, lineMask(pr, float(i) * u_passShift));
     }
+    line *= cutoffMask(p);
+    line = max(line, borderMask(p));
 
     // Flat engraving render. The lighter element is hue/sat-tintable; invert
     // swaps which element is light — u_invert = 1 gives dark lines on a light
@@ -300,7 +377,11 @@ void main() {
     vec3 stroke = (u_invert > 0.5) ? neutralDark : tintLight;
     vec3 col = mix(plate, stroke, line);
     col *= 1.0 - 0.35 * dot(pPlate, pPlate);   // vignette (plate, not pattern)
-    outColor = vec4(col, 1.0);
+    float aCut = cutoutAlpha(p);
+    // Premultiplied: the context is created with the default alpha:true and
+    // premultipliedAlpha:true, so the colour has to be scaled by its own alpha
+    // or the transparent rim fringes bright.
+    outColor = vec4(col * aCut, aCut);
     return;
   }
 
@@ -308,7 +389,47 @@ void main() {
   // by the intersection-crease glint after the loop).
   vec2 lAz = (length(u_mouse) > 1e-4)
       ? normalize(u_mouse) : normalize(vec2(0.35, 0.55));
-  vec3 L = normalize(vec3(lAz, u_lightHeight));
+
+  // A POSITIONED key light, parameterised by inverse distance.
+  //
+  // Placing the light at `lAz * d` with height `u_lightHeight * d` gives
+  // `toL = (lAz*d - pPlate, u_lightHeight*d)`. Dividing that by `d` — which
+  // normalize() does not care about — leaves `(lAz - pPlate/d, u_lightHeight)`,
+  // so the whole model needs one uniform, `u_lightNear = 1/d`, and NOT a
+  // distance. Two things fall out of that choice: `u_lightNear = 0` is exactly
+  // the old directional expression, bit for bit, so every existing preset and
+  // share link renders unchanged; and the light's elevation is independent of
+  // its distance, so the two sliders do not fight.
+  //
+  // This is what a linear pattern needs in order to read as lit at all. `L`
+  // used to be constant across the whole plate, so a grating — whose groove
+  // azimuth is the same everywhere — returned the same `dot(N, L)` at every
+  // pixel and lit up flat. The radial sweep was never the light moving; it was
+  // the GEOMETRY rotating under a fixed light. Varying `L` by position is the
+  // only thing that gives a grating something to sweep against.
+  //
+  // pPlate, not p: a lamp in the room belongs to the element, not to the
+  // engraving, so it must not zoom or pan with the pattern — the same scoping
+  // the vignette and the finish's rim fade already use.
+  // LIGHT space: this element's plate coords expressed in the frame it shares
+  // with the rest of the stack. On plain pPlate each element would centre its
+  // own lamp and a composition would disagree about where the light is — worse
+  // the nearer the light gets. This is the ONLY place the frame is used; the
+  // pattern itself stays in this element's own space.
+  vec2 pLight = u_lightFrameOffset + pPlate * u_lightFrameScale;
+  vec3 toL = vec3(lAz - pLight * u_lightNear, u_lightHeight);
+  vec3 L = normalize(toL);
+
+  // Inverse-square falloff, normalised so the plate centre is always 1.0.
+  // Deliberately coupled to u_lightNear: at u_lightNear = 0 the denominator is
+  // exactly (1 + u_lightHeight^2) and this collapses to 1.0 whatever the
+  // falloff slider says, which is correct — a light infinitely far away has no
+  // perceptible falloff across a plate this small.
+  float lAtten = mix(
+      1.0,
+      (1.0 + u_lightHeight * u_lightHeight) / max(dot(toL, toL), 1e-6),
+      u_lightFalloff);
+
   vec3 V = vec3(0.0, 0.0, 1.0);
   vec3 H = normalize(L + V);
 
@@ -321,6 +442,9 @@ void main() {
   float dWin = 0.0;
   float uWin = 0.0;   // winner's signed position within pitch (which lip)
   float h2 = 0.0;   // second-deepest cut height, for pass-intersection creases
+  // Evaluated once, outside the loop: it carries an fwidth and does not vary
+  // per pass. The GRATING stops here; the border below is not masked by it.
+  float cMask = cutoffMask(p);
 
   for (int i = 0; i < 4; i++) {
     if (i >= n) break;
@@ -353,7 +477,7 @@ void main() {
       gradLocal = vec2(0.0);
     }
 
-    float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f);
+    float inner = smoothstep(0.0, max(fwidth(f) * 1.5, 1e-6), f) * cMask;
     h *= inner;
     gradLocal *= inner;
     gradLocal *= smoothstep(0.0, 0.30, q); // fillet the lip: fade wall slope to flat over the outer 30% of the cut
@@ -374,6 +498,51 @@ void main() {
       uWin = u;
     } else if (h < h2) {
       h2 = h;
+    }
+  }
+
+  // The bounding cut, entering the same depth competition as the passes. It
+  // has to: the winner carries gradFieldWorldWin (the anisotropic specular
+  // tangent), qWin (cavity) and anisoWin (where iridescence and glint are
+  // allowed), so a border left out of it would be shaded by whichever rosette
+  // pass happened to win underneath — wrong exactly where the eye goes.
+  //
+  // Its "field" is length(p), whose gradient is radial, so the groove tangent
+  // comes out tangential to the circle, which is what a turned border is.
+  if (borderOn()) {
+    float r = length(p);
+    float dB = borderDist(p);
+    float hBw = 0.5 * u_border;
+    float qB = clamp(1.0 - dB / hBw, 0.0, 1.0);
+    float hB = -u_relief * 0.02 * pow(qB, u_flank);
+    float aaB = max(fwidth(dB), 1e-6);
+    float anisoB = 1.0 - smoothstep(hBw - 1.5 * aaB, hBw + 0.5 * aaB, dB);
+    vec2 radial = p / max(r, 1e-5);
+
+    vec2 gradB = vec2(0.0);
+    if (dB < hBw) {
+      float dqdd = -1.0 / hBw;
+      float dhdq = -u_relief * 0.02 * u_flank * pow(qB, u_flank - 1.0);
+      gradB = dhdq * dqdd * sign(r - u_cutoff) * radial;
+    } else {
+      hB = 0.0;
+    }
+    gradB *= smoothstep(0.0, 0.30, qB); // same lip fillet as the passes
+
+    if (hB < hMin) {
+      h2 = hMin;
+      hMin = hB;
+      gradWorld = gradB;
+      qWin = qB;
+      gradFieldWorldWin = radial;
+      anisoWin = anisoB;
+      // Rescaled to the loop's convention, where d runs 0 at a cut's centre to
+      // 0.5 at its lip — the border has no repeating pitch of its own, and
+      // dWin drives the ridge-crest glint.
+      dWin = 0.5 * clamp(dB / max(hBw, 1e-6), 0.0, 1.0);
+      uWin = 0.5 * clamp((r - u_cutoff) / max(hBw, 1e-6), -1.0, 1.0);
+    } else if (hB < h2) {
+      h2 = hB;
     }
   }
 
@@ -420,8 +589,12 @@ void main() {
   // env reflections via their normals).
   float diff = max(dot(N, L), 0.0);
 
+  // Falloff rides on lightCol so it reaches exactly the direct key terms and
+  // nothing else — env reflections and the spectral/glint blocks read `spec`
+  // as a brightness weight rather than a light contribution, and tinting or
+  // dimming the key light is deliberately not allowed to shift them.
   vec3 lightCol = mix(vec3(1.0), hue2rgb(u_lightHue), u_lightSat)
-                  * u_keyStrength;
+                  * u_keyStrength * lAtten;
 
   // Groove direction = perpendicular to the field gradient, in screen plane:
   vec2 g = gradFieldWorldWin;
@@ -566,5 +739,7 @@ void main() {
   col = clamp(col, 0.0, 1.0);
   col = pow(col, vec3(1.0 / 2.2));
   col += (hash21(gl_FragCoord.xy) - 0.5) * u_filmGrain;
-  outColor = vec4(col, 1.0);
+  float aCut = cutoutAlpha(p);
+  // Premultiplied, as in the flat path.
+  outColor = vec4(col * aCut, aCut);
 }

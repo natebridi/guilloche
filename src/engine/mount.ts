@@ -38,6 +38,8 @@ export interface MountOptions {
 export interface MountHandle {
   readonly engine: GuillocheEngine;
   setParams(patch: Record<string, number>): void;
+  /** See GuillocheEngine.setLightFrame. */
+  setLightFrame(x: number, y: number, scale: number): void;
   // Pause/resume the rAF loop without tearing down the GL context. Used to
   // idle off-screen embeds; rendering is dirty-flagged anyway, so this is
   // about not running a callback 60x/sec per instance, not about draw cost.
@@ -113,6 +115,7 @@ export function mountGuilloche(
   return {
     engine,
     setParams: (patch) => engine.setParams(patch),
+    setLightFrame: (x, y, scale) => engine.setLightFrame(x, y, scale),
     setActive,
     requestGyro: () => input?.requestGyro() ?? Promise.resolve("unsupported" as GyroState),
     gyroState: () => input?.gyroState() ?? "unsupported",
