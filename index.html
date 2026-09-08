@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +7,19 @@
     <meta
       name="description"
       content="A WebGL2 custom element that renders guilloché (rose-engine engraving) patterns as procedural shaders. Configure one visually, then drop it on any page."
+    />
+    <!-- Jig declares its type tokens as family NAMES only ("Work Sans",
+         "Amarna", "Source Code Pro") and ships no @font-face or @import — so
+         loading the webfonts is the consumer's job, and this page was not
+         doing it. It looked fine in Chrome purely because the families happen
+         to be installed locally; Safari 17+ ignores user-installed fonts as an
+         anti-fingerprinting measure, so it fell back to sans-serif/serif. Any
+         visitor without them installed saw the fallback in every browser. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Amarna&family=Source+Code+Pro:wght@400;500&family=Work+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
     />
   </head>
   <body>

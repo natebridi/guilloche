@@ -82,8 +82,7 @@ body {
 .hero-title {
     position: absolute;
     top: -0.125em;
-    /*left: calc(50cqi - 50%);*/
-    place-self: center;
+    left: -4cqi;
     font-size: 28cqi;
     letter-spacing: -0.04em;
     white-space: nowrap;
@@ -92,18 +91,13 @@ body {
 }
 /* The description panel, filled with the plate's own measured colour. */
 .hero-blurb {
-  max-width: 80%;
-  text-wrap: balance;
-  border-radius: var(--radius-500);
+  border-radius: var(--radius-600);
   background: var(--color-surfaces-card);
   color: var(--color-text-primary);
-  backdrop-filter: url(#lg);
   position: absolute;
   bottom: var(--spacing-500);
   place-self: center;
-  transition:
-    background-color 0.35s ease,
-    color 0.35s ease;
+  inset: auto 0 var(--spacing-500);
 }
 /* The element ships `:host { width: 100%; aspect-ratio: 1 / 1 }`, which is the
    right default for a bare embed and the wrong one inside a frame that already
@@ -117,11 +111,6 @@ body {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
-}
-.example-plate {
-  aspect-ratio: 1;
-  flex: 0 0 32rem;
-  max-width: 100%;
 }
 
 /* --- Hero carousel transition -------------------------------------------- */
@@ -164,6 +153,85 @@ body {
    `order: -1` on a plate that was ALREADY the first child, and the narrow
    breakpoint reset it to `order: 0` — both were no-ops, so both are gone along
    with the class. */
+
+/* --- Editor preview ------------------------------------------------------ */
+
+/* Card proportions and radius are the editor's own "Card" frame (22/14, 14px),
+   so the two read as the same object. The transform is written by useCardTilt;
+   the transition is what turns a stream of pointer samples into a follow. */
+.demo-card {
+  flex: 0 0 30rem;
+  max-width: 100%;
+  aspect-ratio: 22 / 14;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--color-surfaces-card);
+  box-shadow: inset 0 0 0 1px rgb(128 128 128 / 0.22);
+  transform-origin: center center;
+  transition: transform 0.16s ease-out;
+  will-change: transform;
+  display: flex;
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-card {
+    transition: none;
+  }
+}
+
+/* A simplification of the editor rail: label lane, track, readout lane. The
+   lane widths are the rail's own (84px / 54px) so the column of figures lines
+   up the same way. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-300);
+  width: stretch;
+}
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-400);
+  min-height: 24px;
+}
+.panel-label {
+  flex: 0 0 5.25rem;
+  color: var(--color-text-secondary);
+}
+/* Not a slider — a picture of one. It carries no role and is aria-hidden, so
+   nothing offers to drag it.
+   The geometry is lifted from Jig's own Slider so the panel reads as the same
+   control with its handle removed: a 2px rail, and an inactive half drawn as a
+   1px-on / 3px-off dotted gradient rather than a solid line. The "off" colour
+   is the page ground, which is what makes the dots read as gaps. */
+.panel-track {
+  position: relative;
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 2px;
+  border-radius: var(--radius-900);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-control-hover-border),
+    var(--color-control-hover-border) 1px,
+    var(--color-surfaces-card) 1px,
+    var(--color-surfaces-card) 4px
+  );
+}
+.panel-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  border-radius: var(--radius-900);
+  background: var(--color-slider-indicator);
+}
+
+.panel-value {
+  flex: 0 0 3.5rem;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- Preset picker ------------------------------------------------------- */
 
@@ -221,14 +289,6 @@ body {
 
 /* --- Param controls ------------------------------------------------------ */
 
-/* A fixed lane so the control groups line up down the column regardless of how
-   long each label is. Wide enough for the longest of them ("Offset") now that
-   these are the editor's words rather than two-letter url keys. */
-.param-key {
-  width: 5rem;
-  flex-shrink: 0;
-}
-
 /* --- Shape switcher ------------------------------------------------------ */
 
 /* Stable dimensions: the pattern changes size and shape inside this box, so
@@ -278,35 +338,6 @@ body {
 
 /* --- Attributes ---------------------------------------------------------- */
 
-.attrs {
-  margin: 0;
-  border-top: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
-}
-.attr {
-  display: grid;
-  grid-template-columns: 11rem 1fr 6rem;
-  gap: var(--spacing-600);
-  padding: var(--spacing-500) 0;
-  border-bottom: 1px solid var(--color-stroke-subtle, rgb(128 128 128 / 0.18));
-}
-.attr-name {
-  font-family: var(--type-family-mono);
-  font-size: var(--type-scale-200);
-  color: var(--color-text-accent);
-}
-.attr-desc,
-.attr-default {
-  margin: 0;
-}
-.attr-desc {
-  line-height: 1.5;
-}
-.attr-default {
-  font-family: var(--type-family-mono);
-  font-size: var(--type-scale-200);
-  color: var(--color-text-muted);
-}
-
 /* --- Closing band -------------------------------------------------------- */
 
 /* The one full-bleed pattern on the page. Black Card is deliberately near
@@ -332,25 +363,5 @@ body {
 
 /* --- Narrow --------------------------------------------------------------- */
 
-/* What survives Jig taking the folds: the attribute list, which cannot be a
-   Grid without losing dl/dt/dd, and the shape stage's height. Pinned to Jig's
-   own `lg` (1024px) rather than the page's old hand-rolled 860, so the whole
-   page folds at ONE width. */
-@media (max-width: 1023.98px) {
-  .example-plate {
-    flex: initial;
-  }
-  .attr {
-    grid-template-columns: 1fr auto;
-    gap: var(--spacing-300) var(--spacing-500);
-  }
-  .attr-desc {
-    grid-column: 1 / -1;
-  }
-  .attr-default {
-    text-align: right;
-  }
-  .shape-stage {
-    height: 16rem;
-  }
-}
+/* The attribute list's own fold moved into StructuredList's `layout` prop, and
+   the shape demo is gone, so nothing is left here that Jig does not handle. */

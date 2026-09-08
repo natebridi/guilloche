@@ -1,6 +1,7 @@
 import { memo } from "react";
-import { Adorn, Typography } from "@jig-ui/react";
+import { Adorn, Tooltip, Typography } from "@jig-ui/react";
 import { type ParamDef } from "../schema";
+import { metaOf } from "../paramMeta";
 import { displayOf, formatDisplay } from "./units";
 import { ParamSegmented, ParamSlider } from "./controls";
 
@@ -24,11 +25,16 @@ export const ParamRow = memo(function ParamRow({ def, value, onChange }: ParamRo
   // control to belong to, so it is a plain span rather than a second,
   // competing <label> — ToggleButtonGroup is already named via aria-label.
   if (def.type === "enum") {
+    const meta = metaOf(def.key);
     return (
       <div className="row">
-        <Typography as="span" with="caption02" className="row-label">
-          {def.label}
-        </Typography>
+        {/* Typography forwards a ref through PolymorphicProps, so it can be the
+            tooltip's trigger directly rather than needing a wrapper span. */}
+        <Tooltip content={meta.description} placement="left" delay={350}>
+          <Typography as="span" with="caption02" className="row-label">
+            {meta.label}
+          </Typography>
+        </Tooltip>
         <ParamSegmented def={def} value={value} onChange={set} />
       </div>
     );

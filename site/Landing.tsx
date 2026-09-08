@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import {
-  Box,
+  Adorn,
   CodeBlock,
   Grid,
   Icon,
@@ -8,19 +8,32 @@ import {
   Link,
   Separator,
   Stack,
-  ToggleButton,
-  ToggleButtonGroup,
+  Box,
+  StructuredList,
+  StructuredListCell,
+  StructuredListRow,
   Typography,
 } from "@jig-ui/react";
+import { color, radius } from "@jig-ui/react/tokens";
 import '@jig-ui/react/styles.css';                    // required
-import { findPreset } from "../src/presets";
+import { findPreset, presetParams } from "../src/presets";
 import { HERO_SETS, layerParams, layerStyle } from "./heroSets";
-import { SCHEMA } from "../src/schema";
+import { SCHEMA, type ParamDef } from "../src/schema";
+import {
+  groupsInOrder,
+  metaOf,
+  type Display,
+} from "../src/paramMeta";
+// Shared with the editor rather than reimplemented: units.ts is Jig-free and
+// is the single place the display-unit rules live, so the panel cannot drift
+// from what the rail shows for the same param.
+import { displayOf, formatDisplay } from "../src/ui/units";
 import type { GuillochePatternElement } from "../src/element";
 import {
   paramsString,
   usePhaseCarousel,
   usePlateTone,
+  useCardTilt,
   useSharedLight,
   useTweenedParams,
 } from "./patternDemo";
@@ -45,7 +58,6 @@ const GUTTER = { xs: "500", lg: "800" } as const;
  */
 const ROW = { xs: "column", lg: "row" } as const;
 const ROW_ALIGN = { xs: "stretch", lg: "center" } as const;
-const ROW_SPACING = { xs: "500", lg: "700" } as const;
 
 // A curated subset for the picker: enough range to show the gallery is varied
 // without a row of thumbnails wide enough to need its own scroll container.
@@ -141,21 +153,23 @@ function Hero() {
           Guilloché
         </Typography>
 
-        <Box
+        <Stack
           className="hero-blurb"
+          direction="row"
+          spacing="500"
           px="500"
           py="400"
           style={{ backgroundColor: `rgb(from ${tone?.css} r g b / 0.5)`, color: tone?.inkBody }}
         >
-          <Typography as="p" with="display06" style={{ color: tone?.inkBody }}>
-            Mesmerizing engraved patterns, available as a fully-customizable shader.
-          </Typography>
-        </Box>
+          <IconButton icon="caret-left" size="lg" label="Previous pattern" variant="primary" onClick={prev} />
+          <IconButton icon="caret-right" size="lg" label="Next pattern" variant="primary" onClick={next} />
+        </Stack>
       </div>
 
-      <Stack direction="row" justify="center" spacing="200">
-        <IconButton icon="caret-left" size="lg" label="Previous pattern" onClick={prev} />
-        <IconButton icon="caret-right" size="lg" label="Next pattern" onClick={next} />
+      <Stack direction="row" justify="center">
+          <Typography as="p" with="display05" style={{ color: tone?.inkBody, textAlign: 'center' }} balance>
+            Mesmerizing engraved patterns, available as a fully-customizable shader.
+          </Typography>
       </Stack>
 
       <Stack className="wrap" direction="row" align="baseline" justify="center" spacing="300">
@@ -165,34 +179,84 @@ function Hero() {
         <span className="mono-note">npm i @natebridi/guilloche</span>
       </Stack>
 
-      <svg width="0" height="0">
-        <filter id="lg">
-          <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise" />
-          <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.5 0" in="noise" result="softNoise" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blurred" />
-          <feDisplacementMap in="blurred" in2="softNoise" scale="20" xChannelSelector="R" yChannelSelector="G" result="refracted" />
-          <feSpecularLighting in="softNoise" surfaceScale="5" specularConstant="0.25" specularExponent="60" lighting-color="#ffffff" result="light">
-            <fePointLight x="-5000" y="-10000" z="20000" />
-          </feSpecularLighting>
-          <feComposite in="light" in2="refracted" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" />
-        </filter>
-      </svg>
     </Stack>
   );
 }
 
-function PresetExample() {
+/**
+ * The parameters the preview panel shows.
+ *
+ * Six, chosen because they differ across every preset in the picker — a row
+ * that reads the same value for all five would just sit there while the others
+ * animate. Order matches the editor's rail (Layout, then Layers, then Rosette,
+ * then Spiral) so the panel reads as a simplification of it rather than a
+ * different arrangement of the same facts.
+ */
+const PANEL_KEYS = ["density", "cutWidth", "passes", "amp1", "freq1", "twist"];
+
+const PANEL_DEFS = PANEL_KEYS.map((key) => {
+  const def = SCHEMA.find((d) => d.key === key);
+  if (!def) throw new Error(`Unknown panel param: ${key}`);
+  return { def, display: displayOf(def) };
+});
+
+/**
+ * One non-functional param row: the editor's label / track / readout, with the
+ * control taken out.
+ *
+ * The track is `aria-hidden` because it is a picture of a slider rather than
+ * one — but the label and value are left readable, since they are the actual
+ * information. Rendering a real Slider here would be worse than useless: it
+ * would take focus and invite a drag that does nothing.
+ */
+function PanelRow({ def, display, value }: { def: ParamDef; display: Display; value: number }) {
+  const shown = display.toDisplay(value);
+  const fill = (shown - display.min) / Math.max(display.max - display.min, 1e-6);
+  const pct = `${(Math.min(Math.max(fill, 0), 1) * 100).toFixed(2)}%`;
+  return (
+    <div className="panel-row">
+      <Typography as="span" with="caption02" className="panel-label">
+        {metaOf(def.key).label}
+      </Typography>
+      <span className="panel-track" aria-hidden="true">
+        <span className="panel-fill" style={{ width: pct }} />
+      </span>
+      <Adorn className="panel-value" with="mono">
+        {formatDisplay(display, shown)}
+        <Adorn with="muted">{display.unit}</Adorn>
+      </Adorn>
+    </div>
+  );
+}
+
+function EditorPreview() {
   const [id, setId] = useState(PICKER_IDS[0]);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useCardTilt(cardRef);
+
+  const preset = findPreset(id);
+  // Expanded to defaults-plus-values, so a param the preset does not set still
+  // has the value the editor would show for it rather than going undefined.
+  const target = preset ? presetParams(preset) : {};
+  // Tweened in RAW units and converted per frame, so the readout counts and the
+  // track slides. Ints still step, because their display rounds — the same
+  // honest behaviour the old density control had.
+  const tweened = useTweenedParams(
+    Object.fromEntries(PANEL_KEYS.map((k) => [k, target[k] ?? 0])),
+  );
 
   return (
-    <Stack direction={ROW} align={ROW_ALIGN} spacing={ROW_SPACING}>
-      <div className="plate example-plate">
+    <Stack direction={ROW} align={ROW_ALIGN} spacing={{ xs: "500", lg: "600" }} py="500" pl="600" pr="500" style={{ backgroundColor: color.surfaces.card, borderRadius: radius[600] }}>
+      {/* The card tilts toward the pointer exactly as the editor's stage does,
+          and the SAME pointer is aiming the key light inside it. */}
+      <div className="demo-card" ref={cardRef}>
         <guilloche-pattern params={paramsString({}, id)} />
       </div>
+
+      <Separator orientation="vertical" />
+
       <Stack className="min-w-0" spacing="500" align="start" grow>
-        <Typography as="h3" with="display04">
-          Ready-made presets
-        </Typography>
+
         {/* Five across, which is not a count Jig's Grid can take — `columns`
             accepts only the divisors of 24 — so this one stays hand-rolled. */}
         <div className="picker" role="group" aria-label="Preset">
@@ -219,131 +283,38 @@ function PresetExample() {
             );
           })}
         </div>
-        <CodeBlock>{`<guilloche-pattern params="v1&pr=${id}"></guilloche-pattern>`}</CodeBlock>
+
+        <div className="panel">
+          {PANEL_DEFS.map(({ def, display }) => (
+            <PanelRow
+              key={def.key}
+              def={def}
+              display={display}
+              value={tweened[def.key] ?? 0}
+            />
+          ))}
+          <Link
+            href={`/create?${paramsString({}, id)}`}
+            variant="secondary"
+            icon="arrow-right"
+            iconPosition="end"
+            style={{ marginTop: 'var(--spacing-400)'}}
+          >
+            Open in editor
+          </Link>
+        </div>
+
       </Stack>
     </Stack>
   );
 }
-
-// Chosen for visible reach rather than for covering the schema: amplitude
-// swells the lobes, twist shears them into a spiral, offset opens the hole at
-// the centre. All three are floats, so every sweep tweens continuously —
-// `density` used to step, because decode() rounds ints.
-/** The editor rail's label for a param, so the two never drift apart. */
-const paramLabel = (key: string) => SCHEMA.find((d) => d.key === key)?.label ?? key;
-
-const AMP1S = [0.02, 0.06, 0.1];
-const TWISTS = [0, 0.9, 2];
-const OFFSETS = [0, 0.06, 0.14];
-
-function ParamExample() {
-  // All three start OFF their schema default, so the snippet below shows every
-  // key from the first paint — `encode` writes only non-default values, and a
-  // demo whose code block omits the controls it is demonstrating reads broken.
-  const [amp1, setAmp1] = useState(0.1);
-  const [twist, setTwist] = useState(0.9);
-  const [offset, setOffset] = useState(0.06);
-
-  // The three knobs the controls expose, tweened; everything else is fixed so
-  // the demo has a recognisable identity to move around in.
-  //
-  // These are SCHEMA keys, not url keys: `encode` looks each param up by
-  // `d.key` and writes `d.urlKey`, so handing it `mt`/`d`/`tw` matches nothing
-  // and silently yields a bare "v1". The url keys only ever appear in the
-  // string encode produces — which is exactly what the snippet below shows.
-  const tweened = useTweenedParams({ amp1, twist, offset });
-  // metal and density are pinned here now that they are no longer controls, so
-  // the demo keeps the gold, dense plate it has always had.
-  const fixed = { freq1: 24, iridescence: 1, metal: 1, density: 44 };
-  const live = paramsString({ ...fixed, ...tweened });
-  // The snippet shows where the controls have been set, not where the tween
-  // currently is — a code block counting through 43.812 would be noise.
-  const shown = paramsString({ ...fixed, amp1, twist, offset });
-
-  return (
-    <Stack direction={ROW} align={ROW_ALIGN} spacing={ROW_SPACING}>
-      <Stack className="min-w-0" spacing="500" align="start" grow>
-        <Typography as="h3" with="display04">
-          Build your own
-        </Typography>
-        <Typography as="p" with="body01" className="lead">
-          Every parameter in the guilloché editor can be represented in the embed's
-          params property, and any change is immediately rendered.
-        </Typography>
-
-        <Stack spacing="300">
-          <Stack direction="row" align="center" spacing="500">
-            <Typography as="span" with="body01" tone="secondary" className="param-key">
-              {paramLabel("amp1")}
-            </Typography>
-            <ToggleButtonGroup
-              aria-label={paramLabel("amp1")}
-              value={[String(amp1)]}
-              onValueChange={(v) => setAmp1(Number(v[0] ?? amp1))}
-            >
-              {AMP1S.map((a) => (
-                <ToggleButton key={a} size="sm" value={String(a)}>
-                  {a.toFixed(2)}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Stack>
-          <Stack direction="row" align="center" spacing="500">
-            <Typography as="span" with="body01" tone="secondary" className="param-key">
-              {paramLabel("twist")}
-            </Typography>
-            <ToggleButtonGroup
-              aria-label={paramLabel("twist")}
-              value={[String(twist)]}
-              onValueChange={(v) => setTwist(Number(v[0] ?? twist))}
-            >
-              {TWISTS.map((t) => (
-                <ToggleButton key={t} size="sm" value={String(t)}>
-                  {t.toFixed(1)}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Stack>
-          <Stack direction="row" align="center" spacing="500">
-            <Typography as="span" with="body01" tone="secondary" className="param-key">
-              {paramLabel("offset")}
-            </Typography>
-            <ToggleButtonGroup
-              aria-label={paramLabel("offset")}
-              value={[String(offset)]}
-              onValueChange={(v) => setOffset(Number(v[0] ?? offset))}
-            >
-              {OFFSETS.map((o) => (
-                <ToggleButton key={o} size="sm" value={String(o)}>
-                  {o.toFixed(2)}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Stack>
-        </Stack>
-
-        <CodeBlock>{`params="${shown}"`}</CodeBlock>
-      </Stack>
-      <div className="plate example-plate">
-        <guilloche-pattern params={live} />
-      </div>
-    </Stack>
-  );
-}
-
-const SHAPES = [
-  { id: "full", label: "Full width", css: "aspect-ratio: 16 / 5; width: 100%;" },
-  { id: "card", label: "Card", css: "aspect-ratio: 22 / 14; width: 460px;" },
-  { id: "circle", label: "Circle", css: "aspect-ratio: 1; width: 340px; border-radius: 50%;" },
-];
-
 
 const ATTRIBUTES = [
   {
     name: "params",
     fallback: "required",
     description:
-      "The editor share-link string. Reactive — change it and the pattern updates in place. Anything you leave out falls back to its default.",
+      "Params string exported from the editor. Reactive updates when value is changed."
   },
   {
     name: "interactive",
@@ -355,9 +326,103 @@ const ATTRIBUTES = [
     name: "max-dpr",
     fallback: "2",
     description:
-      "Cap on devicePixelRatio. Lower it for large embeds — the shader is expensive per pixel.",
+      "Cap on devicePixelRatio. Can be lowered if shader performance suffers.",
   },
 ];
+
+/**
+ * The parameter reference, split across the two columns of the Grid.
+ *
+ * Both the split and the group order come from `groupsInOrder()`, so a new
+ * group in SCHEMA appears here on its own. The break is chosen to balance row
+ * counts rather than group counts — Material alone is 13 rows, so an even
+ * split of the NINE groups would leave one column half the height of the other.
+ */
+const PARAM_COLUMNS: string[][] = (() => {
+  const groups = groupsInOrder();
+  const count = (g: string) => SCHEMA.filter((d) => metaOf(d.key).group === g).length;
+  const total = SCHEMA.length;
+  const left: string[] = [];
+  let filled = 0;
+  for (const g of groups) {
+    // Take groups until the next one would push this column past half.
+    if (filled > 0 && filled + count(g) > total / 2) break;
+    left.push(g);
+    filled += count(g);
+  }
+  return [left, groups.filter((g) => !left.includes(g))];
+})();
+
+/**
+ * One group's parameters.
+ *
+ * Both key spellings are shown because they address two different interfaces
+ * and are NOT interchangeable: `Param` is the schema key, which is what
+ * `setParams({ amp1: 0.05 })` and the copied JS object take, while `URL` is the
+ * short key that goes inside `params="v1&a1=0.05"`. Putting a schema key in a
+ * params string is silently ignored — `encode` looks each param up by `key` and
+ * writes `urlKey` — so showing only one of them would send half the readers
+ * down a dead end.
+ *
+ * Everything but the prose is read from SCHEMA: both keys, the default, and an
+ * enum's option names. Only the descriptions are authored, in paramDocs.ts.
+ */
+function ParamGroup({ group }: { group: string }) {
+  const defs = SCHEMA.filter((d) => metaOf(d.key).group === group);
+  return (
+    <Box>
+      <Typography with="heading05" mb="300">
+        {group}
+      </Typography>
+      <StructuredList
+        headers={["Param", "What it does", "Default", "URL"]}
+        columnWidths={["7rem", "auto", "4rem", "2.75rem"]}
+        layout={{ xs: "stacked", lg: "columns" }}
+        with="body01"
+      >
+        {defs.map((def) => (
+          <StructuredListRow key={def.key}>
+            {/* The three narrow columns drop to caption02: at body01 the
+                longest schema key (twistWavePhase) needs most of 8rem, which is
+                width the description cannot spare in a two-up grid. */}
+            <StructuredListCell with="caption02">
+              <Adorn as="code" with="mono">{def.key}</Adorn>
+            </StructuredListCell>
+            <StructuredListCell with="caption02">
+              {metaOf(def.key).description}
+              {/* Enum option names come from SCHEMA rather than being written
+                  into the prose, so renaming an option cannot leave the docs
+                  describing one that no longer exists. */}
+              {metaOf(def.key).options ? (
+                <>
+                  {" "}
+                  <Adorn with="muted">
+                    {metaOf(def.key)
+                      .options!.map((o, i) => `${i} = ${o}`)
+                      .join(", ")}
+                    .
+                  </Adorn>
+                </>
+              ) : null}
+            </StructuredListCell>
+            <StructuredListCell with="caption02">
+              <Adorn with="mono">
+                <Adorn with="muted">{def.default}</Adorn>
+              </Adorn>
+            </StructuredListCell>
+            {/* Muted against the plain Param column: the two are not
+                interchangeable, and this is the secondary of the pair. */}
+            <StructuredListCell with="caption02">
+              <Adorn as="code" with="mono">
+                <Adorn with="muted">{def.urlKey}</Adorn>
+              </Adorn>
+            </StructuredListCell>
+          </StructuredListRow>
+        ))}
+      </StructuredList>
+    </Box>
+  );
+}
 
 function Reference() {
   return (
@@ -365,62 +430,81 @@ function Reference() {
       as="section"
       className="reference"
       id="reference"
-      spacing="700"
+      spacing="500"
       px={GUTTER}
       pt="700"
       pb="800"
       style={{ maxWidth: '60rem', marginInline: 'auto' }}
     >
-      <Typography as="h2" with="display03">
-        Attributes
+      <Typography as="h2" with="display05">
+        Using &lt;guilloche-pattern&gt;
       </Typography>
 
-      {/* Stays a hand-rolled grid: Grid places `Box` children, and Box will not
-          render as `dt`/`dd`, so adopting it here would cost the list its
-          dl/dt/dd semantics. */}
-      <dl className="attrs">
+      {/* Jig's StructuredList, which is a better fit than the dl/dt/dd this
+          replaced: it carries proper ARIA table roles for what is genuinely a
+          three-column table (a dl with two dds per dt was always a stretch),
+          it draws its own row rules, and it stacks on a narrow screen — which
+          is what the hand-rolled `.attr` grid and its media query were for.
+          `columnWidths` reproduces the old 11rem / 1fr / 6rem template. */}
+      <StructuredList
+        headers={["Attribute", "What it does", "Default"]}
+        columnWidths={["11rem", "auto", "6rem"]}
+        layout={{ xs: "stacked", lg: "columns" }}
+        with="body01"
+      >
         {ATTRIBUTES.map((attr) => (
-          <div className="attr" key={attr.name}>
-            <dt className="attr-name">{attr.name}</dt>
-            <dd className="attr-desc">
-              {/* Typography's `as` does not accept `dd`, so the preset is
-                  applied inside the definition rather than by replacing it —
-                  the list keeps its dl/dt/dd semantics either way. */}
-              <Typography as="span" with="body01">
-                {attr.description}
-              </Typography>
-            </dd>
-            <dd className="attr-default">{attr.fallback}</dd>
-          </div>
+          <StructuredListRow key={attr.name}>
+            {/* Nested Adorn is the documented way to get family and colour
+                separately — the outer sets monospace, the inner the tint. It
+                is what ParamRow already does for the editor's readouts. */}
+            <StructuredListCell with="code01">{attr.name}</StructuredListCell>
+            <StructuredListCell>{attr.description}</StructuredListCell>
+            <StructuredListCell with="code01">
+                <Adorn with="muted">{attr.fallback}</Adorn>
+            </StructuredListCell>
+          </StructuredListRow>
         ))}
-      </dl>
+      </StructuredList>
 
-      <Grid columns={{ xs: 1, lg: 2 }} spacing="600">
-        <Stack className="min-w-0" spacing="400">
+      <Typography as="h2" with="display05" mt="600">
+        Parameter reference
+      </Typography>
+
+      <Grid columns={{ xs: 1, lg: 2 }} spacing="600" alignSelf="stretch" align="stretch">
+        {PARAM_COLUMNS.map((groups, i) => (
+          <Stack key={i} align="stretch" spacing="600">
+            {groups.map((group) => (
+              <ParamGroup key={group} group={group} />
+            ))}
+          </Stack>
+        ))}
+      </Grid>
+
+      <Grid columns={{ xs: 1, lg: 2 }} spacing="600" mt="600">
+        <Stack spacing="400">
           <Typography as="h3" with="display05">
             Fallback
           </Typography>
           <Typography as="p" with="body01" className="lead">
-            Child content shows only when a WebGL2 context can't be created. Put a
-            poster image there.
+            Child content displays when WebGL2 isn't available.
           </Typography>
           <CodeBlock label="html">{`<guilloche-pattern params="v1&pr=peacock">
-  <img src="poster.png" alt="Guilloché pattern" />
+  <img src="fallback.png" alt="Guilloché pattern" />
 </guilloche-pattern>`}</CodeBlock>
         </Stack>
-        <Stack className="min-w-0" spacing="400">
+        <Stack spacing="400">
           <Typography as="h3" with="display05">
             Programmatic
           </Typography>
           <Typography as="p" with="body01" className="lead">
-            Drive a canvas directly, without the custom element.
+            Skip the custom element and display to canvas directly.
           </Typography>
-          <CodeBlock label="js">{`const handle = mountGuilloche(canvas, {
+          <CodeBlock label="js" style={{ width: 'stretch' }}>{`const yourGuilloche = mountGuilloche(canvas, {
   params: decode("v1&pr=sunburst").params,
 });
 
-handle.setParams({ twist: 1.2 });
-handle.destroy();`}</CodeBlock>
+yourGuilloche.setParams({ twist: 1.2 });
+yourGuilloche.destroy();`}</CodeBlock>
         </Stack>
       </Grid>
     </Stack>
@@ -473,15 +557,13 @@ export function Landing() {
         <Stack as="section" spacing="700" px={GUTTER} pt="700" pb="800" style={{ maxWidth: '60rem', marginInline: 'auto' }}>
           <Stack spacing="400">
             <Typography as="h2" with="display03">
-              Usage
+              Build your guilloché
             </Typography>
             <Typography as="p" with="body02" className="lead">
-              Guilloché configurations can be exported from the editor, either as a
-              link or an embed code.
+              Guilloché patterns are built and exported from the editor, where you can adjust every aspect of the style and display
             </Typography>
           </Stack>
-          <PresetExample />
-          <ParamExample />
+          <EditorPreview />
         </Stack>
         <Separator />
         <Reference />

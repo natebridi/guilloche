@@ -32,10 +32,13 @@ export {
   findPreset,
   type Preset,
 } from "./presets";
+// `groupsInOrder` used to be exported here. It reads PARAM_META, and PARAM_META
+// is deliberately outside the embed graph — re-exporting it would pull every
+// label, group and description back into the published bundle, which is exactly
+// what the schema/meta split exists to prevent.
 export {
   SCHEMA,
   schemaDefaults,
-  groupsInOrder,
   type ParamDef,
   type ParamType,
 } from "./schema";

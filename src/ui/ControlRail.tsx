@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Dialog, Icon, Separator, Typography } from "@jig-ui/react";
-import { SCHEMA, GROUP_SHOW_WHEN, groupsInOrder } from "../schema";
+import { SCHEMA } from "../schema";
+import { GROUP_SHOW_WHEN, groupsInOrder, metaOf } from "../paramMeta";
 import { PRESETS, findPreset, type Preset } from "../presets";
 import { ParamRow } from "./ParamRow";
 
@@ -219,7 +220,7 @@ export function ControlRail({
           return (
             <section className="group" key={group}>
               <Typography as="h2" with="display06">{group}</Typography>
-              {SCHEMA.filter((d) => d.group === group).map((def) => (
+              {SCHEMA.filter((d) => metaOf(d.key).group === group).map((def) => (
                 <ParamRow
                   key={def.key}
                   def={def}

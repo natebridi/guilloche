@@ -609,6 +609,20 @@ void main() {
   float spec = mix(specIso, specAniso, u_anisotropy);
   spec = mix(specIso, spec, anisoWin);
 
+  // Cosine foreshortening — the rendering equation's NdotL, which this term
+  // was missing entirely.
+  //
+  // Without it a groove wall FACING AWAY from the key light still received the
+  // full highlight, which is why a V-groove read as lit across its whole width
+  // instead of showing a lit wall and a shadowed one. The Kajiya-Kay lobe is
+  // the reason it shows up here rather than on the land: `specAniso` is a
+  // function of the groove TANGENT and H only, and both walls of a V share a
+  // tangent, so that lobe cannot tell them apart on its own. `anisoWin` is 1
+  // inside a cut and 0 outside, so the anisotropic term dominates exactly
+  // where the two walls are — while `specIso`, `diff` and the env reflection
+  // all read N and therefore always did distinguish them.
+  spec *= diff;
+
   // Sampled with the reflection vector:
   vec3 R = reflect(-V, N);
 

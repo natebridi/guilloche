@@ -141,6 +141,16 @@ const INK_TINT = 0.75;
 const TARGET_RATIO = 3.6;
 /** Body-text contrast target. WCAG AA for normal text is 4.5:1. */
 const TARGET_RATIO_BODY = 4.5;
+/**
+ * Ceiling on a forced-light ink's luminance.
+ *
+ * Without it a bright plate wants a target past 1.0, which clamps to pure
+ * white and throws the plate's hue away — the tint is the whole point. 0.92
+ * sits just above the brightest value the adaptive path already produces
+ * (Golden Record lands at 0.927), so every preset that already looked right is
+ * unchanged to within a rounding error.
+ */
+const LIGHT_CAP = 0.92;
 
 /**
  * Build an ink that carries the plate's hue at a luminance that clears
@@ -155,14 +165,17 @@ function inkForPlate(
   mean: readonly [number, number, number],
   plateLum: number,
   ratio: number = TARGET_RATIO,
+  forceLight = false,
 ): { ink: string; ratio: number } {
   // Required luminance in each direction, from the contrast formula solved for
   // the text term. Lighter text: L = r*(Lbg + 0.05) - 0.05.
   const lighter = ratio * (plateLum + 0.05) - 0.05;
   const darker = (plateLum + 0.05) / ratio - 0.05;
   // Prefer going lighter; only go dark when lighter cannot reach gamut.
-  const goLight = lighter <= 1;
-  const target = clamp01(goLight ? Math.max(lighter, 0.5) : Math.max(darker, 0));
+  const goLight = forceLight || lighter <= 1;
+  let target = goLight ? Math.max(lighter, 0.5) : Math.max(darker, 0);
+  if (goLight && forceLight) target = Math.min(target, LIGHT_CAP);
+  target = clamp01(target);
 
   const meanLum = luminance(mean[0], mean[1], mean[2]);
   let rgb: [number, number, number];
@@ -204,10 +217,14 @@ export interface PlateTone {
   /** An ink carrying the plate's hue, at the LARGE-text contrast target. */
   ink: string;
   /**
-   * The same, at the body-text target. The blurb panel is filled with `css`,
-   * whose luminance is `lum` by construction — so text on it needs the same
-   * 4.5:1 any body copy does, and `ink` (tuned for a display-size title) is
-   * not enough on its own.
+   * The same at the body-text target, and ALWAYS on the light side.
+   *
+   * `ink` is for text sitting ON the plate, so it has to be free to go dark
+   * when the plate is bright. `inkBody` is used off the plate as well — on the
+   * page's own dark surface — where a dark ink is invisible. Exactly one
+   * preset triggered that: every plate up to Golden Record wants a light ink
+   * anyway, and only Sunburst (mean luminance 0.196) is bright enough to flip.
+   * Forcing the light branch keeps the other eight bit-identical.
    */
   inkBody: string;
   /** Contrast ratio `ink` achieves against `lum`. Large text needs 3:1. */
@@ -248,7 +265,7 @@ export function usePlateTone(
       }
       const mean = probed.rgb as [number, number, number];
       const { ink, ratio } = inkForPlate(mean, probed.lum);
-      const body = inkForPlate(mean, probed.lum, TARGET_RATIO_BODY);
+      const body = inkForPlate(mean, probed.lum, TARGET_RATIO_BODY, true);
       setTone({
         rgb: mean,
         css: cssFromLinear(mean),
@@ -334,4 +351,50 @@ export function useSharedLight(
       ro.disconnect();
     };
   }, [containerRef, key]);
+}
+
+
+// --- Card tilt -------------------------------------------------------------
+
+/** Matches the editor's MAX_TILT_DEG so the two cards behave identically. */
+const MAX_TILT_DEG = 10;
+
+/**
+ * Tilt a card toward the pointer, the way the editor's stage does.
+ *
+ * The editor gets its aim from `mountGuilloche`'s `onAim`, which the custom
+ * element does not expose — so the normalisation is repeated here rather than
+ * plumbed through. It has to match exactly, because the SAME pointer is also
+ * aiming the key light inside the element: divide both axes by
+ * `min(w, h) / 2` and clamp the MAGNITUDE, never per-axis. Clamping x and y
+ * independently pins the aim to a square, so past the corner both components
+ * saturate and the tilt locks at 45 degrees while the light keeps moving.
+ */
+export function useCardTilt(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const onMove = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const s = Math.min(r.width, r.height) / 2;
+      if (s <= 0) return;
+      let x = (e.clientX - r.left - r.width / 2) / s;
+      let y = -(e.clientY - r.top - r.height / 2) / s; // up-positive
+      const len = Math.hypot(x, y);
+      if (len > 1) {
+        x /= len;
+        y /= len;
+      }
+      el.style.transform =
+        `perspective(820px) rotateX(${(y * MAX_TILT_DEG).toFixed(2)}deg) ` +
+        `rotateY(${(x * MAX_TILT_DEG).toFixed(2)}deg) scale(1.02)`;
+    };
+
+    // Window scope, and no reset on leave — both to match the element's own
+    // light, which holds its last aim rather than snapping back. Resetting only
+    // the tilt would leave the two visibly disagreeing.
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [ref]);
 }

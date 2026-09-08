@@ -1,5 +1,6 @@
-import { Slider, ToggleButton, ToggleButtonGroup } from "@jig-ui/react";
+import { Slider, ToggleButton, ToggleButtonGroup, Tooltip } from "@jig-ui/react";
 import { type ParamDef } from "../schema";
+import { metaOf } from "../paramMeta";
 import { displayOf } from "./units";
 
 interface ControlProps {
@@ -20,11 +21,19 @@ interface ControlProps {
 // step of 1 as well, and putting ± buttons on 23 more rows would swamp the rail.
 export function ParamSlider({ def, value, onChange }: ControlProps) {
   const d = displayOf(def);
+  const meta = metaOf(def.key);
   return (
     <Slider
       className="row-slider"
       size="sm"
-      label={def.label}
+      // `label` takes a ReactNode, so the tooltip wraps the label TEXT rather
+      // than the control — hovering the word explains it, and the slider keeps
+      // Jig's real <label> binding and its accessible name.
+      label={
+        <Tooltip content={meta.description} placement="left" delay={350}>
+          <span>{meta.label}</span>
+        </Tooltip>
+      }
       min={d.min}
       max={d.max}
       step={d.step}
@@ -46,13 +55,13 @@ export function ParamSegmented({ def, value, onChange }: ControlProps) {
   return (
     <ToggleButtonGroup
       className="segmented"
-      aria-label={def.label}
+      aria-label={metaOf(def.key).label}
       value={[current]}
       // Pressing the lit button would otherwise clear the group to no
       // selection, which is not a state a param can be in.
       onValueChange={(ids) => onChange(Number(ids[0] ?? current))}
     >
-      {(def.options ?? []).map((opt, i) => (
+      {(metaOf(def.key).options ?? []).map((opt, i) => (
         <ToggleButton key={opt} size="sm" value={String(i)}>
           {opt}
         </ToggleButton>

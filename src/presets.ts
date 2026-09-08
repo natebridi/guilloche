@@ -57,7 +57,7 @@ export const PRESETS: Preset[] = [
     id: "hammered-copper",
     title: "Hammered Copper",
     values: {
-      density: 71, offset: 0.084, cutWidth: 0.65, passAngle: 0.19635,
+      density: 71, offset: 0.084, cutWidth: 0.65, passes: 1, passAngle: 0.19635,
       amp1: 0.012, freq1: 18, amp2: 0.024, freq2: 6, phase2: 1.047198,
       ampTaper: 0.4, twist: 3, twistWaveAmp: 0.8, twistWaveFreq: 7.5,
       relief: 1.24, cavity: 0.42, metal: 1, enamel: 0.27,
@@ -70,7 +70,7 @@ export const PRESETS: Preset[] = [
     id: "golden-record",
     title: "Golden Record",
     values: {
-      density: 35, offset: 0.034, cutWidth: 0.2, passes: 4,
+      density: 35, offset: 0.034, cutWidth: 0.2, passes: 4, passAngle: 0,
       passShift: 0.0056, amp1: 0.021, amp2: 0, freq2: 1, phase2: 1.047198,
       ampTaper: 0.4, twistWaveFreq: 0, relief: 1.24, cavity: 0.42,
       metal: 1, enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.83,
@@ -119,7 +119,7 @@ export const PRESETS: Preset[] = [
     title: "Tiger",
     values: {
       shaded: 0, density: 6, offset: 0.12, cutWidth: 0.36, cutterMode: 0,
-      passes: 4, passShift: 0.0072, amp1: 0.09, freq1: 18,
+      passes: 4, passAngle: 0, passShift: 0.0072, amp1: 0.09, freq1: 18,
       phase1: 2.775074, amp2: 0.017, freq2: 54, ampTaper: 0.1070388,
       twist: 3, twistWaveAmp: 0.96, twistWaveFreq: 2.5,
       twistWavePhase: 3.368485, invert: 1, flatHue: 1, flatSat: 1,

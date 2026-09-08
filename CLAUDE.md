@@ -195,12 +195,56 @@ element runs through the same `decode()` as a share link. `src/embedSnippet.ts`
 owns the CDN/version-pinning policy (pin to major, or `0.x` for 0-versions;
 never `@latest`).
 
+## Schema vs. param metadata (Nate-initiated, post-TASK-9)
+
+A param is described by TWO files, and which one a field lives in is decided by
+a single question: **does a consumer of the published package need it?**
+
+| | `src/schema.ts` | `src/paramMeta.ts` |
+| --- | --- | --- |
+| ships in the embed | YES | no |
+| holds | `key`, `type`, `min`, `max`, `default`, `urlKey` | `label`, `group`, `step`, `options`, `display`, `description` |
+| read by | `decode`/`encode`, `schemaDefaults()`, the preset validator | the editor rail, the website's parameter reference |
+
+`schema.ts` is reachable from `src/embed.ts`, so every byte in it lands in every
+page that embeds a pattern. It used to carry the labels, groups and display
+specs too — none of which a consumer can use — and the parameter descriptions
+were about to be added to it as well. Splitting them took the embed from
+**23.14 kB to 22.07 kB gzipped**, and merging the descriptions in instead would
+have pushed it to ~24.8 kB. That ~2.8 kB swing is the whole justification.
+
+Three consequences worth knowing:
+
+- **`src/index.ts` no longer exports `groupsInOrder`.** It reads `PARAM_META`,
+  so re-exporting it from the package entry would drag every label, group and
+  description straight back into the bundle and undo the split.
+- **`ParamDef` no longer has `.label` or `.group`.** Anything that wants them
+  calls `metaOf(key)`, which throws on a missing row rather than returning a
+  half-built object.
+- **The two halves are checked against each other** by a dev-only block at
+  module scope in `paramMeta.ts` — the same shape as the preset validator, and
+  at module scope on purpose so it fires in the editor as well as the website
+  rather than wherever someone remembered to call it.
+
+**Adding a param means editing BOTH files.** The dev check names whichever one
+you forgot.
+
+`description` is a full sentence because it has two consumers: the website's
+parameter reference renders it as the "What it does" column, and the editor
+shows it as a Jig `Tooltip` on the param's label — the slider's via Jig's
+`label` prop (which takes a ReactNode, so the tooltip wraps the label TEXT and
+the control keeps its real `<label>` binding), the enum's on the `Typography`
+directly (`PolymorphicProps` forwards a ref, so it can be the trigger). Nothing
+is hover-only: the same sentence is on the website in plain sight, which is the
+condition Jig's own Tooltip docs put on using one at all.
+
 ## Display units (UI-only, post-TASK-9)
 
 **SCHEMA is in ENGINE units and always will be.** Uniforms, `urlState`,
 `presets.ts` all read it directly and none of them know the
 display layer exists. What the user reads is a pure UI overlay: an optional
-`display: DisplaySpec` on each `ParamDef`, compiled once by `compileDisplay()`
+`display: DisplaySpec` on each param's `ParamMeta` (in `src/paramMeta.ts`, NOT
+in the shipped schema), compiled once by `compileDisplay()`
 into a `Display` that `ParamRow` converts through on the way in and out. The
 slider itself runs in DISPLAY units — a percent slider genuinely has 100 stops
 — and `toRaw()` clamps and rounds on the way back.
@@ -282,7 +326,8 @@ simply clamp.
 shader already floors it with `max(u_waveShape, 1e-3)`, and the old value put
 the DEFAULT exactly on the MINIMUM, which read as a broken slider.
 
-**Adding a param:** pick the unit by the rules above and add the spec. Only
+**Adding a param:** add the runtime half to `SCHEMA` and the rest to
+`PARAM_META` (see the split above), picking the unit by the rules here. Only
 reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
 
 ## Architecture (fixed decisions)
@@ -730,10 +775,11 @@ still show an edge instead of dissolving into the dialog.
 
 ## Panel grouping
 
-`group` on a `ParamDef` is a free-form string; `GROUP_ORDER` sets the folder
-order and `GROUP_SHOW_WHEN` hides folders that don't apply to the current
-render mode. Adding or renaming a folder is a data edit in `src/schema.ts` and
-nothing else — no code knows a group name.
+`group` on a param's `ParamMeta` is a free-form string; `GROUP_ORDER` sets the
+folder order and `GROUP_SHOW_WHEN` hides folders that don't apply to the current
+render mode. All three live in `src/paramMeta.ts`, so adding or renaming a
+folder is a data edit there and nothing else — no code knows a group name, and
+none of it reaches the published bundle.
 
 Current order, which reads as the pipeline: **Render, Layout, Layers, Rosette,
 Spiral, Flat, Material, Lighting, Effects.**
@@ -828,7 +874,7 @@ at 14; the reflectance block (`anisotropy`/`shininess`/`specStrength`/`finish`/
   clear-coat highlight, applied after spectral/glints; `keyStrength`/
   `lightHue`/`lightSat` tint only the direct diffuse+specular terms via
   `lightCol`, leaving env reflections and spectral/glint hue untouched),
-  TASK 7 (typed param schema + URL state — `src/schema.ts` `SCHEMA` is the
+  TASK 7 (typed param schema + URL state — `src/schema.ts` `SCHEMA` was the
   single source of truth for every param's default/range/step/type/group/
   urlKey; `params` is derived via `schemaDefaults()` (hand-written literal
   deleted); `devPanel.ts` GENERATES all folders/sliders from SCHEMA with zero

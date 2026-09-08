@@ -7,8 +7,13 @@
     <title>Create — Guilloché</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Two sets, and both are needed. Instrument Sans and IBM Plex Mono are
+         the rail's own chrome (styles.css sets them on .app); Work Sans,
+         Amarna and Source Code Pro are what Jig's own type tokens name, so
+         every Jig Typography, Button and Link in the rail wants them. Jig
+         ships no @font-face, so nothing loads them unless this does. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&family=Amarna&family=Source+Code+Pro:wght@400;500&family=Work+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
   </head>

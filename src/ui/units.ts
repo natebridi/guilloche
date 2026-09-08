@@ -7,7 +7,8 @@
 // a top-level side effect that no bundler can tree-shake — so living here, in
 // src/ui/, is what keeps ~4 kB of readout logic out of the published package.
 
-import { SCHEMA, type Display, type ParamDef, type Unit } from "../schema";
+import { SCHEMA, type ParamDef } from "../schema";
+import { metaOf, type Display, type Unit } from "../paramMeta";
 
 const DEG = 180 / Math.PI;
 
@@ -30,12 +31,13 @@ function quantize(d: ParamDef, v: number): number {
 // because the slider snaps with floating-point arithmetic and 0.30000000000004
 // would otherwise reach both the readout and the URL.
 function identity(d: ParamDef, unit: Unit) {
-  const decimals = d.type === "int" ? 0 : decimalsFor(d.step);
+  const meta = metaOf(d.key);
+  const decimals = d.type === "int" ? 0 : decimalsFor(meta.step);
   return {
     unit,
     min: d.min,
     max: d.max,
-    step: d.step,
+    step: meta.step,
     decimals,
     signed: d.min < 0,
     toDisplay: (v: number) => v,
@@ -45,8 +47,9 @@ function identity(d: ParamDef, unit: Unit) {
 }
 
 function compileDisplay(d: ParamDef): Display {
+  const meta = metaOf(d.key);
   const signed = d.min < 0;
-  switch (d.display?.kind) {
+  switch (meta.display?.kind) {
     case "percent": {
       const span = d.max - d.min;
       return {
@@ -109,7 +112,7 @@ function compileDisplay(d: ParamDef): Display {
       // 0.4 span at default amplitudes, so a linear slider spent two thirds of
       // its travel on the radius sweep and crammed the entire strength ramp
       // into the bottom seventh.
-      const { k } = d.display as { k: number };
+      const { k } = meta.display as { k: number };
       const span = d.max - d.min;
       const denom = Math.expm1(k);
       return {
