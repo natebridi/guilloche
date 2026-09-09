@@ -1,12 +1,8 @@
 :root {
-  --bg: #0e0f12;
-  --rail: #15171c;
-  --hair: #2a2d35;
-  --text: #cdd0d8;
-  --muted: #787d89;
-  --accent: #c8a24b;
-  --sans: "Instrument Sans", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --bg: var(--color-surfaces-body);
+  --hair: var(--color-control-border);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-muted);
 }
 
 * {
@@ -23,7 +19,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--sans);
+  font-family: var(--type-family-sans);
   font-size: 13px;
   overflow: hidden;
 }
@@ -60,7 +56,7 @@ body {
   height: 100%;
   margin: 0;
   padding: 24px;
-  font-family: var(--sans);
+  font-family: var(--type-family-sans);
   font-size: 14px;
   color: var(--muted);
   text-align: center;
@@ -75,25 +71,29 @@ body {
   border-radius: 999px;
 }
 
-.stage-caption {
-  position: absolute;
-  left: 18px;
-  bottom: 16px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--muted);
-  pointer-events: none;
-  user-select: none;
-}
-
 /* ---- Preview frame ---- */
+/* The ground the plate sits on. Dots rather than ruled lines: at this contrast
+   a grid of lines reads as structure competing with the engraving, while dots
+   read as paper. Only visible around the Card / Circle / Thumb frames — the
+   Full frame covers it, which is correct.
+
+   `--hair` on `--bg` is a hairline's worth of contrast, and the 1px dot is
+   drawn with a soft stop (1px solid, transparent by 1.6px) so it stays round
+   rather than aliasing into a square at fractional device pixel ratios. */
 .frame-viewport {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    circle at center,
+    rgba(from var(--hair) r g b / 0.5) 0 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+  background-position: center;
 }
 .frame {
   position: relative;
@@ -117,6 +117,10 @@ body {
   max-height: 84%;
   border-radius: 14px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+
+  @media (width > 1200px) {
+      width: 45cqi;
+  }
 }
 .frame-circle {
   width: 460px;
@@ -125,6 +129,10 @@ body {
   max-height: 84%;
   border-radius: 50%;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+
+  @media (width > 1200px) {
+      width: 45cqi;
+  }
 }
 
 /* Square, matching the preset gallery's crop. Framing a `thumb` spec means
@@ -148,7 +156,6 @@ body {
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: rgba(21, 23, 28, 0.82);
   border: 1px solid var(--hair);
   border-radius: 5px;
   backdrop-filter: blur(6px);
@@ -279,7 +286,7 @@ body {
   color: var(--text);
 }
 .preset-tile[aria-pressed="true"] {
-  color: var(--accent);
+  color: var(--color-text-primary);
 }
 /* The wrapper carries the shape: an inset ring on a replaced element paints
    under the image in some engines, so the ring has to live on a box that
@@ -290,18 +297,20 @@ body {
   overflow: hidden;
   border-radius: 8px;
   background: var(--bg);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 .preset-thumb::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   pointer-events: none;
 }
-.preset-tile[aria-pressed="true"] .preset-thumb::after {
-  box-shadow: inset 0 0 0 2px var(--accent);
+.preset-tile[aria-pressed="true"] .preset-thumb {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+
+    &::after {
+        box-shadow: inset 0 0 0 2px var(--color-text-primary);
+    }
 }
 .preset-tile:focus-visible .preset-thumb::after {
   box-shadow: inset 0 0 0 2px var(--text);
@@ -391,7 +400,7 @@ body {
 /* Drawn INSIDE the box and over the image: a border would resize the tile and
    an unoffset outline would be clipped by the neighbouring gap. */
 .preset-thumb-btn[aria-pressed="true"] {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-text-primary);
   outline-offset: -2px;
 }
 .preset-thumb-btn:focus-visible {

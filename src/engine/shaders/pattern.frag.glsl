@@ -3,6 +3,19 @@ precision highp float;
 
 const float TAU = 6.28318530718;
 const float PI = 3.14159265359;
+// Relief -> wall SLOPE. The depth is written as relief * K * (halfEff/density)
+// so that the density and half-width cancel out of the gradient chain exactly,
+// leaving |grad| = relief * K * flank * q^(flank-1) * |gField|. Before this the
+// depth was a bare constant, so the slope was relief * 0.02 * density / halfEff
+// — it depended on the PATTERN, blew past the normal clamp at relief 0.45 on
+// the default density, and left 89% of the slider doing nothing. K = 2.5 makes
+// relief 1.0 reproduce exactly the slope everything used to be clamped at.
+const float RELIEF_K = 2.5;
+// Soft ceiling on the surface gradient, replacing a hard clamp at 2.5. A hard
+// clamp is what made relief die: past it the normal simply stopped changing.
+// This is ~identity well below the knee and never exceeds it, so relief stays
+// monotonic all the way up.
+const float G_SOFT = 12.0;
 
 uniform vec2 u_res;
 uniform vec2 u_mouse;
@@ -24,7 +37,6 @@ uniform float u_enamel;
 uniform float u_enamelHue;
 uniform float u_enamelDepth;
 uniform float u_envStrength;
-uniform float u_envWarmth;
 uniform float u_keyStrength;
 uniform float u_lightHue;
 uniform float u_lightSat;
@@ -304,11 +316,12 @@ vec3 envSample(vec3 d) {
                * (0.5 + 0.5 * d.x);
   float dark   = smoothstep(0.05, -0.25, d.y);   // horizon shadow band
   float floorGlow = smoothstep(-0.55, -1.0, d.y) * 0.12;
-  vec3 warm = vec3(1.05, 0.92, 0.72);
-  vec3 cool = vec3(0.78, 0.90, 1.08);
-  vec3 stripTint = mix(vec3(1.0, 0.98, 0.92),
-                       u_envWarmth > 0.0 ? warm : cool,
-                       abs(u_envWarmth));
+  // The studio's strip lights. There used to be an `envWarmth` control here
+  // mixing this toward a warm or cool tint; it only ever touched strip1, which
+  // is visible solely where the reflection vector's R.y lands in 0.6-0.95, so
+  // against enamel, a tinted key light and the tonemap it did next to nothing.
+  // This is the neutral it sat at by default.
+  vec3 stripTint = vec3(1.0, 0.98, 0.92);
   // Strips kept modest: at coarse density the broad groove walls all reflect
   // these, so a hot studio floods the frame (not scaled by keyStrength). Tuned
   // to read as selective bright reflections / fill, not a wash.
@@ -441,6 +454,7 @@ void main() {
   float anisoWin = 0.0;
   float dWin = 0.0;
   float uWin = 0.0;   // winner's signed position within pitch (which lip)
+  float depthWin = 0.0; // winner's full-depth scale, for the crease threshold
   float h2 = 0.0;   // second-deepest cut height, for pass-intersection creases
   // Evaluated once, outside the loop: it carries an fwidth and does not vary
   // per pass. The GRATING stops here; the border below is not masked by it.
@@ -463,13 +477,14 @@ void main() {
         ? 0.5 * u_cutWidth
         : 0.5 * u_cutWidth * clamp(gMag, 0.05, 4.0);
     float q = clamp(1.0 - d / halfEff, 0.0, 1.0);
-    float h = -u_relief * 0.02 * pow(q, u_flank);
+    float depthScale = u_relief * RELIEF_K * halfEff / max(u_density, 1e-4);
+    float h = -depthScale * pow(q, u_flank);
     float aaF = max(u_density * fwidth(f), 1e-6);
     float anisoW = 1.0 - smoothstep(halfEff - 1.5 * aaF, halfEff + 0.5 * aaF, d);
     vec2 gradLocal;
     if (d < halfEff) {
       float dqdd = -1.0 / halfEff;
-      float dhdq = -u_relief * 0.02 * u_flank * pow(q, u_flank - 1.0);
+      float dhdq = -depthScale * u_flank * pow(q, u_flank - 1.0);
       float dddf = u_density * sign(u);
       gradLocal = (dhdq) * (dqdd) * (dddf) * gField;
     } else {
@@ -496,6 +511,7 @@ void main() {
       anisoWin = anisoW;
       dWin = d;
       uWin = u;
+      depthWin = depthScale;
     } else if (h < h2) {
       h2 = h;
     }
@@ -514,7 +530,10 @@ void main() {
     float dB = borderDist(p);
     float hBw = 0.5 * u_border;
     float qB = clamp(1.0 - dB / hBw, 0.0, 1.0);
-    float hB = -u_relief * 0.02 * pow(qB, u_flank);
+    // Same normalisation, with the border's own half-width standing in for
+    // halfEff/density — a wider bounding cut is deeper for the same wall angle.
+    float depthScaleB = u_relief * RELIEF_K * hBw;
+    float hB = -depthScaleB * pow(qB, u_flank);
     float aaB = max(fwidth(dB), 1e-6);
     float anisoB = 1.0 - smoothstep(hBw - 1.5 * aaB, hBw + 0.5 * aaB, dB);
     vec2 radial = p / max(r, 1e-5);
@@ -522,7 +541,7 @@ void main() {
     vec2 gradB = vec2(0.0);
     if (dB < hBw) {
       float dqdd = -1.0 / hBw;
-      float dhdq = -u_relief * 0.02 * u_flank * pow(qB, u_flank - 1.0);
+      float dhdq = -depthScaleB * u_flank * pow(qB, u_flank - 1.0);
       gradB = dhdq * dqdd * sign(r - u_cutoff) * radial;
     } else {
       hB = 0.0;
@@ -539,6 +558,7 @@ void main() {
       // Rescaled to the loop's convention, where d runs 0 at a cut's centre to
       // 0.5 at its lip — the border has no repeating pitch of its own, and
       // dWin drives the ridge-crest glint.
+      depthWin = depthScaleB;
       dWin = 0.5 * clamp(dB / max(hBw, 1e-6), 0.0, 1.0);
       uWin = 0.5 * clamp((r - u_cutoff) / max(hBw, 1e-6), -1.0, 1.0);
     } else if (hB < h2) {
@@ -579,7 +599,10 @@ void main() {
   }
 
   float gLen = length(gradH_world);
-  if (gLen > 2.5) gradH_world *= 2.5 / gLen;
+  if (gLen > 1e-6) {
+    float gSoft = gLen / pow(1.0 + pow(gLen / G_SOFT, 4.0), 0.25);
+    gradH_world *= gSoft / gLen;
+  }
 
   vec3 N = normalize(vec3(-gradH_world, 1.0));
   // L / V / H were computed before the pass loop (the pointer AIMS the key
@@ -623,8 +646,42 @@ void main() {
   // all read N and therefore always did distinguish them.
   spec *= diff;
 
+  // FRINGES, achromatic half. The banding used to exist only inside
+  // spectralSum, which is multiplied by u_iridescence — so with iridescence at
+  // 0 the whole term vanished and the slider did literally nothing. Interference
+  // banding on a cut is a STRUCTURAL property of the grating, not a property of
+  // its colour, so it belongs on the specular too.
+  //
+  // Banded on qWin — 0 at the cut's edge, 1 at its deepest point — so the bands
+  // sit at constant depth and therefore run ALONG the cut and stack across its
+  // width, tracing its contour as it curves. Banding on the grating coordinate
+  // the colour term uses would instead put them where the cut's ORIENTATION
+  // crosses a period, which reads as patches rather than hairlines.
+  //
+  // Gated by anisoWin (1 inside a cut, 0 on the land), so the uncut metal keeps
+  // its turned finish and this never leaks onto it.
+  //
+  // Two things keep this continuous at the bottom of the slider. The band is
+  // centred on 1.0, not on its own amplitude — an off-centre band would darken
+  // every cut by its mean the moment it switched on, which is a brightness step
+  // across the whole plate rather than banding appearing. And the amplitude
+  // ramps in over the first cycle: below one full period the cosine has not
+  // finished a swing across the cut, so it would act as a flat gain rather than
+  // a band, and switching that on at any threshold would snap. Ramped, there is
+  // no threshold and no branch — at u_fringes = 0 the amplitude is exactly 0
+  // and the band is exactly 1.0.
+  float fringeAmp = 0.35 * smoothstep(0.0, 1.0, u_fringes);
+  float fringeBand = 1.0 + fringeAmp * cos(TAU * qWin * u_fringes);
+  spec *= mix(1.0, fringeBand, anisoWin);
+
   // Sampled with the reflection vector:
   vec3 R = reflect(-V, N);
+  // The hard gradient clamp existed to stop a steep wall's reflection dropping
+  // into envSample's dark horizon band and drawing a 1px black rim (Task 6.10).
+  // Guard the REFLECTION rather than the geometry: the wall keeps its true
+  // normal for diffuse and specular — which is what conveys depth — and only
+  // the env lookup is kept above the band.
+  R.y = max(R.y, -0.10);
 
   vec3 base, specTint;
   if (u_metal < 0.5) {
@@ -725,7 +782,7 @@ void main() {
     // diagonally down into the overlap. Thin AA'd band where hMin == h2.
     float dh = abs(hMin - h2);
     float crease = (1.0 - smoothstep(0.0, max(fwidth(dh) * 1.5, 1e-5), dh))
-                 * smoothstep(0.0, u_relief * 0.004, -h2);
+                 * smoothstep(0.0, max(depthWin * 0.2, 1e-6), -h2);
     col += (vec3(1.0) + spectralSum * 0.5) * (rim + crease) * edgeSpec
            * u_glint * 2.0 * lightCol;
   }

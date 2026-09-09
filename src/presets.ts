@@ -48,7 +48,7 @@ export const PRESETS: Preset[] = [
       ampTaper: 0.0466014, twist: 1.75, twistWaveAmp: 1.52,
       anisotropy: 0.5, shininess: 57.68, finish: 0.45, finishFreq: 420,
       iridescence: 1, spectralPitch: 8, spectralSat: 1, fringes: 2.5,
-      glint: 0, envStrength: 0.84, envWarmth: 1, lightHeight: 0.105104,
+      glint: 0, envStrength: 0.84, lightHeight: 0.105104,
       lightHue: 0.427778, lightSat: 0.62,
     },
     thumb: { scale: 1.5, centerX: 1.0, centerY: 1.0 }
@@ -60,7 +60,7 @@ export const PRESETS: Preset[] = [
       density: 71, offset: 0.084, cutWidth: 0.65, passes: 1, passAngle: 0.19635,
       amp1: 0.012, freq1: 18, amp2: 0.024, freq2: 6, phase2: 1.047198,
       ampTaper: 0.4, twist: 3, twistWaveAmp: 0.8, twistWaveFreq: 7.5,
-      relief: 1.24, cavity: 0.42, metal: 1, enamel: 0.27,
+      relief: 1, cavity: 0.42, metal: 1, enamel: 0.27,
       enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.52,
       grainScale: 1570, filmGrain: 0.084,
     },
@@ -72,11 +72,23 @@ export const PRESETS: Preset[] = [
     values: {
       density: 35, offset: 0.034, cutWidth: 0.2, passes: 4, passAngle: 0,
       passShift: 0.0056, amp1: 0.021, amp2: 0, freq2: 1, phase2: 1.047198,
-      ampTaper: 0.4, twistWaveFreq: 0, relief: 1.24, cavity: 0.42,
-      metal: 1, enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.83,
+      ampTaper: 0.4, twistWaveFreq: 0, relief: 0.2, cavity: 0.42,
+      metal: 1, enamelHue: 0.955556, enamelDepth: 5.52, grain: 0.83, fringes: 6,
       grainScale: 1570,
     },
     thumb: { scale: 2.5, centerX: -0.53, centerY: -0.51 },
+  },
+  {
+    id: "purple-haze",
+    title: "Purple Haze",
+    values: { scale: 1.3, density: 15, cutWidth: 0.93, passAngle: 0.139626, passShift: 0.0056, amp1: 0.014, freq1: 19, amp2: 0.015, freq2: 7, phase2: 1.867502, ampTaper: 0.0545822, twist: 3, twistWaveAmp: 4, twistWaveFreq: 3, relief: 0.2, cavity: 0.42, anisotropy: 1, spectralPitch: 6.58, fringes: 12, glint: 0, lightHeight: 1.962611, lightHue: 0.825, lightSat: 0.35, enamel: 0.25, enamelHue: 0.947222, enamelDepth: 0.78, grain: 0.66, grainScale: 1200, filmGrain: 0.15 },
+    thumb: { scale: 4.0, centerX: -.67 }
+  },
+  {
+    id: "funny",
+    title: "Funny Business",
+    values: { mode: 1, offset: 0.034, cutWidth: 0.82, passAngle: 0.139626, amp1: 0, amp2: 0.1, freq2: 1, phase2: 1.047198, twistWaveAmp: 0.32, twistWaveFreq: 1.5, relief: 0.2, cavity: 0.2, anisotropy: 1, shininess: 8.5742, finish: 0.56, iridescence: 0.41, spectralPitch: 8, fringes: 12, glint: 0, envStrength: 0.13, lightHeight: 0.700208, lightNear: 0.66, lightFalloff: 0.49, exposure: 2.97, keyStrength: 0.36, lightHue: 0.625, lightSat: 0.25, enamel: 0.75, enamelHue: 0.647222, enamelDepth: 1.26, grain: 0.83, grainScale: 1350, filmGrain: 0.15, },
+    thumb: { scale: 4.0 }
   },
   {
     id: "cornfield",
@@ -84,10 +96,10 @@ export const PRESETS: Preset[] = [
     values: {
       density: 44, cutWidth: 0.2, passes: 2, passAngle: 0.1309,
       amp1: 0.035, freq1: 24, amp2: 0, ampTaper: 0.4, twist: 1.1,
-      twistWaveAmp: 4, twistWaveFreq: 1.5, relief: 4, cavity: 1,
+      twistWaveAmp: 4, twistWaveFreq: 1.5, relief: 1, cavity: 1,
       anisotropy: 1, shininess: 19.0273, finish: 0.12, finishFreq: 30,
       iridescence: 1, spectralPitch: 5.48, spectralSat: 0.41, fringes: 8,
-      envWarmth: 1, lightHeight: 0.445229, exposure: 1.05,
+      lightHeight: 0.445229, exposure: 1.05,
       keyStrength: 0.65, lightHue: 0.219444, lightSat: 1,
     },
     // Its identity is the spectral fringes on the cut walls, which are
@@ -101,10 +113,10 @@ export const PRESETS: Preset[] = [
       density: 29, cutWidth: 0.2, passes: 3, passAngle: 0.715585, amp1: 0,
       freq1: 24, amp2: 0.034, freq2: 2, phase2: 2.722714, waveShape: 4,
       ampTaper: 0.4, twist: 3, twistWaveAmp: 4, twistWaveFreq: 5,
-      twistWavePhase: 4.066617, relief: 3.04, flank: 3, cavity: 1,
+      twistWavePhase: 4.066617, relief: 1, flank: 3, cavity: 1,
       metal: 1, anisotropy: 0, shininess: 13.4543, finish: 0.3,
       finishFreq: 30, iridescence: 1, spectralPitch: 5.58,
-      spectralSat: 0.77, fringes: 8, envStrength: 0.67, envWarmth: -1,
+      spectralSat: 0.77, fringes: 8, envStrength: 0.67,
       lightHeight: 0.445229, exposure: 0.23, keyStrength: 0.05,
       lightHue: 0.219444, lightSat: 1,
     },

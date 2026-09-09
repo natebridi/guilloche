@@ -98,7 +98,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Stage engineRef={engineRef} initialParams={initial} params={params} />
+      <Stage engineRef={engineRef} initialParams={initial} />
       <ControlRail
         params={params}
         activePreset={activePreset}

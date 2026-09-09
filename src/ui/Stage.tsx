@@ -7,13 +7,15 @@ import { FRAMES } from "./frames";
 
 const MAX_TILT_DEG = 10;
 
+// No live `params` prop: the caption was its only reader, and the canvas is
+// driven by engine.setParams from App rather than by re-rendering this. Passing
+// params in would re-render the Stage on every slider tick for nothing.
 interface StageProps {
   engineRef: MutableRefObject<GuillocheEngine | null>;
   initialParams: Record<string, number>;
-  params: Record<string, number>;
 }
 
-export function Stage({ engineRef, initialParams, params }: StageProps) {
+export function Stage({ engineRef, initialParams }: StageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -87,13 +89,8 @@ export function Stage({ engineRef, initialParams, params }: StageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const mode = params.mode < 0.5 ? "RADIAL" : "LINEAR";
-  const passes = Math.round(params.passes);
-  const passLabel = passes === 1 ? "1 PASS" : `${passes} PASSES`;
-  const render = params.shaded ? "RELIEF" : "FLAT";
-
-  // Frame chrome and the caption describe a render that doesn't exist here, so
-  // the empty state replaces the whole stage rather than sitting inside it.
+  // Frame chrome describes a render that doesn't exist here, so the empty
+  // state replaces the whole stage rather than sitting inside it.
   if (failed) {
     return (
       <div className="stage" ref={stageRef}>
@@ -137,7 +134,6 @@ export function Stage({ engineRef, initialParams, params }: StageProps) {
           Enable motion
         </Button>
       )}
-      <div className="stage-caption">{`${mode} · ${passLabel} · ${render}`}</div>
     </div>
   );
 }

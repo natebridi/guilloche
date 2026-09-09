@@ -183,7 +183,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     group: "Layers",
     step: 1,
     description:
-      "How many times the same cut is repeated. Either Angel or Shift must be non-zero to see effect.",
+      "How many times the same cut is repeated. Angle or Shift must be non-zero to see effect.",
   },
   passAngle: {
     label: "Angle",
@@ -417,7 +417,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     group: "Material",
     step: 0.5,
     description:
-      "How many discrete interference bands cross each cut. 0 leaves one smooth fan instead.",
+      "Visible interference lines that follow the contour of the cut lines.",
   },
   glint: {
     label: "Glint",
@@ -425,7 +425,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "fraction" },
     description:
-      "Rare, sharp sparkle at cut edges and ridge crests, gated by the light.",
+      "Intensity of sparkle at edges of cut lines.",
   },
 
   // --- Lighting ---
@@ -435,15 +435,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "multiplier" },
     description:
-      "Strength of the procedural studio environment the surface reflects.",
-  },
-  envWarmth: {
-    label: "Env Warmth",
-    group: "Lighting",
-    step: 0.01,
-    display: { kind: "fraction" },
-    description:
-      "Warms one band of that environment.",
+      "Strength of the lighting environment reflected by the surface.",
   },
   lightHeight: {
     label: "Light Height",
@@ -451,15 +443,15 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "elevation" },
     description:
-      "Elevation of the key light above the plate. Low rakes across the cuts; high is overhead.",
+      "Elevation of the key light above the plate.",
   },
   lightNear: {
-    label: "Light Near",
+    label: "Light Distance",
     group: "Lighting",
     step: 0.01,
     display: { kind: "percent" },
     description:
-      "Brings the key light in from infinity to a position over the plate, so its direction varies across the surface. 0 is a distant directional light.",
+      "Brings the key light in from infinity (0) to a position over the plate, so its direction varies across the surface.",
   },
   lightFalloff: {
     label: "Light Falloff",
@@ -467,7 +459,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "fraction" },
     description:
-      "Inverse-square falloff from that position. Inert while Light Near is 0 — a light infinitely far away has none across a plate this size.",
+      "Inverse-square falloff from light position. No effect when Light Distance is 0.",
   },
   exposure: {
     label: "Exposure",
@@ -475,7 +467,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "multiplier" },
     description:
-      "The one global gain, and it feeds the tonemap — so it changes contrast and highlight rolloff, not just level.",
+      "Adjusts gain across all rendered elements and effects.",
   },
   keyStrength: {
     label: "Key Strength",
@@ -483,7 +475,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "multiplier" },
     description:
-      "Brightness of the key light's direct diffuse and specular terms.",
+      "Brightness of the key light.",
   },
   lightHue: {
     label: "Light Hue",
@@ -491,7 +483,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "turns" },
     description:
-      "Hue of the key light. Tints the direct terms only, never the reflections.",
+      "Hue of the key light.",
   },
   lightSat: {
     label: "Light Sat",
@@ -499,7 +491,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "fraction" },
     description:
-      "How far the key light is tinted toward that hue.",
+      "Saturation of key light hue.",
   },
 
   // --- Effects ---
@@ -509,7 +501,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "fraction" },
     description:
-      "Blends in a translucent coat, tinting the metal seen through it.",
+      "Simulates a layer of translucent enamel over the pattern.",
   },
   enamelHue: {
     label: "Enamel Hue",
@@ -517,7 +509,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.001,
     display: { kind: "turns" },
     description:
-      "Hue of that coat.",
+      "Hue of enamel layer.",
   },
   enamelDepth: {
     label: "Enamel Sat",
@@ -525,7 +517,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "percent" },
     description:
-      "How strongly the coat absorbs, which reads as its saturation.",
+      "Saturation of enamel layer hue.",
   },
   grain: {
     label: "Grain",
@@ -533,14 +525,14 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.01,
     display: { kind: "fraction" },
     description:
-      "Tool-mark grain running along the cuts, with a finer residue on the uncut land.",
+      "Intensity of natural metal grain in cuts.",
   },
   grainScale: {
     label: "Grain Scale",
     group: "Effects",
     step: 10,
     description:
-      "Fineness of that tool grain.",
+      "Fineness of grain.",
   },
   filmGrain: {
     label: "Film Grain",
@@ -548,7 +540,7 @@ export const PARAM_META: Record<string, ParamMeta> = {
     step: 0.001,
     display: { kind: "percent" },
     description:
-      "Photographic grain over the whole frame, added after tonemapping.",
+      "Photographic grain over everything.",
   },
 };
 

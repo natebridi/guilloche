@@ -567,11 +567,16 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   visibility depends on `anisoWin`/`spec` like any other groove-local term —
   verified correct via the exact math (Node-checked) and by temporarily
   widening `envSample`'s strip1 window to confirm color pipelines, not just
-  eyeballing the default scene. **envWarmth** tints `envSample`'s `strip1`
-  term only (`stripTint`, Task 6.7) — real but narrow-banded (only visible
-  where the reflection vector's `R.y` lands in strip1's 0.6–0.95 range), so
-  it can look subtle at typical viewing/lighting params despite being fully
-  wired. **glint** (Task 6.12) is independent of `iridescence` — a separate
+  eyeballing the default scene. **envWarmth** was REMOVED (Nate-initiated). It
+  tinted `envSample`'s `stripTint` toward warm or cool, but only ever reached
+  `strip1`, which is visible solely where the reflection vector's `R.y` lands
+  in 0.6–0.95 — so against enamel, a tinted key light and the tonemap it did
+  effectively nothing at usable settings. This file already recorded it as
+  "real but narrow-banded... subtle at typical viewing/lighting params despite
+  being fully wired", which in hindsight was the argument for deleting it.
+  `stripTint` is now the neutral it defaulted to, and Peacock, Cornfield and
+  Black Card dropped the key (they set 1, 1 and -1). Old share links carrying
+  `ew=` still decode — `decode()` ignores keys it does not recognise. **glint** (Task 6.12) is independent of `iridescence` — a separate
   `if (u_glint > 0.0)` block adding rare, sharp (`pow(tw, 24.0)`) sparkle
   pinpoints at cut edges (`anisoWin·(1-anisoWin)`) and ridge crests
   (`dWin` near 0.5, the winning pass's `d` — tracked alongside `qWin` in the
@@ -836,7 +841,8 @@ at 14; the reflectance block (`anisotropy`/`shininess`/`specStrength`/`finish`/
   amp1/amp2 in `phaseField` plus its product-rule derivative term in
   `phaseGradient`, collapsing lobes into calm rings near `coord = 0`),
   TASK 6.7 (diffraction-grating iridescence + env color temperature —
-  `iridescence`/`spectralPitch`/`spectralSat`/`envWarmth`; spectral term
+  `iridescence`/`spectralPitch`/`spectralSat`/`envWarmth` (the last since
+  removed); spectral term
   gated by `anisoWin` so it only ever appears in grooves, added before the
   ACES tonemap, silver/gold only),
   TASK 6.6c (fixed the amplitude-taper fold artifact — `taperR` floors the
