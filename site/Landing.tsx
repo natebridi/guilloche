@@ -82,7 +82,7 @@ function TopBar() {
         <Typography with="code01"><Adorn with="muted">v0.1.0</Adorn></Typography>
       </Stack>
       <Stack as="nav" direction="row" align="center" spacing="600">
-        <Link href="https://www.npmjs.com/package/@natebridi/guilloche" with="body01">
+        <Link href="https://www.npmjs.com/package/@n8bridi/guilloche" with="body01">
           npm
         </Link>
         {/* Icon-only, so the accessible name has to come from aria-label — and
