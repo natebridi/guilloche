@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import {
   Adorn,
-  Button,
   CodeBlock,
   Collapsible,
   Grid,
