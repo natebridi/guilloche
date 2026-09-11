@@ -2,13 +2,13 @@ import { useRef, useState } from "react";
 import {
   Adorn,
   CodeBlock,
+  Collapsible,
   Grid,
   Icon,
   IconButton,
   Link,
   Separator,
   Stack,
-  Box,
   StructuredList,
   StructuredListCell,
   StructuredListRow,
@@ -370,10 +370,10 @@ const PARAM_COLUMNS: string[][] = (() => {
 function ParamGroup({ group }: { group: string }) {
   const defs = SCHEMA.filter((d) => metaOf(d.key).group === group);
   return (
-    <Box>
-      <Typography with="heading05" mb="300">
-        {group}
-      </Typography>
+    // hiddenUntilFound rather than the default (fully unmounted): this is a
+    // reference page, so a reader's find-in-page search should still be able
+    // to land inside a group they haven't opened.
+    <Collapsible label={group} with="heading05" hiddenUntilFound>
       <StructuredList
         headers={["Param", "What it does", "Default", "URL"]}
         columnWidths={["7rem", "auto", "4rem", "2.75rem"]}
@@ -420,7 +420,7 @@ function ParamGroup({ group }: { group: string }) {
           </StructuredListRow>
         ))}
       </StructuredList>
-    </Box>
+    </Collapsible>
   );
 }
 
@@ -470,15 +470,16 @@ function Reference() {
         Parameter reference
       </Typography>
 
-      <Grid columns={{ xs: 1, lg: 2 }} spacing="600" alignSelf="stretch" align="stretch">
-        {PARAM_COLUMNS.map((groups, i) => (
+      <Stack direction={{ xs: 'column', lg: 'row' }} spacing="600" alignSelf="stretch" align="stretch">
+        {PARAM_COLUMNS.map((groups, i) => (<>
           <Stack key={i} align="stretch" spacing="600">
             {groups.map((group) => (
               <ParamGroup key={group} group={group} />
             ))}
           </Stack>
-        ))}
-      </Grid>
+          {i == 0 && <Separator orientation="vertical" /> }
+        </>))}
+      </Stack>
 
       <Grid columns={{ xs: 1, lg: 2 }} spacing="600" mt="600">
         <Stack spacing="400">

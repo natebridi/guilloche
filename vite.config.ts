@@ -10,11 +10,6 @@ const port = Number(process.env.PORT) || 5183;
 // both. Read at config time so the built app can't drift from what ships.
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
-// @jig-ui/react is linked from a sibling checkout (file:../jig/...), so Vite
-// resolves it through its REAL path — outside this project root. That has two
-// consequences, both handled below.
-const JIG_DIR = resolve(__dirname, "../jig");
-
 // Dev-only: resolve clean URLs the way a static host does.
 //
 // Netlify serves /create out of /create/index.html, but Vite's dev server only
@@ -48,15 +43,6 @@ export default defineConfig({
     __PKG_NAME__: JSON.stringify(pkg.name),
     __PKG_VERSION__: JSON.stringify(pkg.version),
   },
-  resolve: {
-    // 1. Jig's checkout has its OWN node_modules containing React 19, and its
-    //    dist imports "react/jsx-runtime". Without deduping, that import
-    //    resolves to React 19 while this app runs React 18 — and the two
-    //    runtimes tag elements with different $$typeof symbols, so React 18's
-    //    reconciler would reject every Jig component outright. This is only a
-    //    hazard because it's a symlink; the old tarball shipped dist only.
-    dedupe: ["react", "react-dom"],
-  },
   // Multi-page: the landing/docs page and the editor are separate documents
   // with separate dependency graphs, and being real entries is what lets each
   // resolve bare specifiers like "@jig-ui/react" from node_modules.
@@ -89,8 +75,5 @@ export default defineConfig({
     port,
     strictPort: true,
     host: true,
-    // 2. Dev server file serving is confined to the project root by default,
-    //    which would 403 the linked package's files at their real path.
-    fs: { allow: [__dirname, JIG_DIR] },
   },
 });

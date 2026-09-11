@@ -7,17 +7,6 @@
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",
-    // Jig is linked from a sibling checkout that carries its OWN
-    // @types/react (19.x) while this app is on 18.x. TypeScript then sees two
-    // different React type universes, and Jig components whose signatures
-    // mention ReactElement/ReactNode — Link is the one that bites — fail with
-    // "cannot be used as a JSX component". This is the type-level twin of the
-    // runtime `resolve.dedupe` in vite.config.ts, and needs fixing in the same
-    // way: pin every React type reference to this project's copy.
-    "paths": {
-      "react": ["./node_modules/@types/react"],
-      "react-dom": ["./node_modules/@types/react-dom"]
-    },
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",

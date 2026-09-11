@@ -2,8 +2,8 @@
 //
 // Renders every preset through the real engine in real Chrome and writes
 // public/thumbs/<id>.webp. Run it by hand and COMMIT the output: Netlify never
-// runs this, because pulling Chromium into a deploy to regenerate nine images
-// that change a few times a year is a bad trade.
+// runs this, because pulling Chromium into a deploy to regenerate eleven
+// images that change a few times a year is a bad trade.
 //
 // Why Playwright and not a headless GL binding: the shader is `#version 300
 // es`, so it needs WebGL2, and headless-gl is WebGL1 only. Driving real
@@ -12,7 +12,6 @@
 //
 // Flags:
 //   --only <id>   regenerate a single preset (fast iteration on framing)
-//   --wide        render 5:3 posters into public/thumbs/wide/ instead of tiles
 //   --check       don't render; exit 1 if the stamp is stale
 
 import { chromium } from "playwright";
@@ -25,22 +24,15 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const argv = process.argv.slice(2);
-// Two frames, one pipeline. Square TILES are the gallery; 5:3 POSTERS are for
-// anywhere the element appears wide — the landing hero's fallback, an og:image.
-// A poster is NOT a cropped tile: the shader normalizes by min(u_res), so a
-// wide frame reveals more pattern rather than slicing the silhouette off a
-// square one.
-const wide = argv.includes("--wide");
-const SIZE_W = wide ? 1200 : 320;
-const SIZE_H = wide ? 720 : 320;
-// Supersample factor, applied as the page's deviceScaleFactor. Lower for
-// posters purely to keep the backing store sane (3600x2160 as it is).
-const SS = wide ? 3 : 4;
+const SIZE_W = 320;
+const SIZE_H = 320;
+// Supersample factor, applied as the page's deviceScaleFactor.
+const SS = 4;
 // Its own port: the dev server may well be running on the configured one.
 const PORT = 5199;
 
-const OUT_DIR = resolve(ROOT, wide ? "public/thumbs/wide" : "public/thumbs");
-const STAMP = resolve(ROOT, wide ? "scripts/thumbs.wide.stamp.json" : "scripts/thumbs.stamp.json");
+const OUT_DIR = resolve(ROOT, "public/thumbs");
+const STAMP = resolve(ROOT, "scripts/thumbs.stamp.json");
 
 // Inputs that change what a thumbnail looks like. The shader is the one that
 // bites: a committed image silently stops matching the app the next time
@@ -147,9 +139,9 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-// Only stamp a FULL run: a --only run leaves the other eight at whatever
+// Only stamp a FULL run: a --only run leaves the other ten at whatever
 // source revision they were generated from.
 if (!only) {
   await writeFile(STAMP, JSON.stringify(current, null, 2) + "\n");
 }
-console.log(`\n${targets.length} ${wide ? "poster" : "thumbnail"}(s) -> ${OUT_DIR.replace(ROOT + "/", "")}/`);
+console.log(`\n${targets.length} thumbnail(s) -> ${OUT_DIR.replace(ROOT + "/", "")}/`);

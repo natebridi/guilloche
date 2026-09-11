@@ -28,7 +28,10 @@ The repo now builds TWO artifacts from one source tree:
 - **The embeddable package** (`npm run build:embed` → `dist-embed/`) — the
   `<guilloche-pattern>` custom element plus the programmatic API. ESM only
   (every WebGL2-capable browser supports modules, so an IIFE build would be
-  dead weight). ~13.6 kB gzipped, self-contained.
+  dead weight). ~24 kB gzipped, self-contained (grown from ~13.6 kB at
+  packaging time as later tasks added material/lighting/texture params and
+  presets; see the schema/paramMeta split below for the one deliberate
+  size-reduction pass).
 
 Key structural rule this introduced: **`src/engine/` must never import from
 `src/ui/`.** The embed bundle reaches into engine/ only, so anything the
@@ -348,7 +351,8 @@ reach for a new `DisplaySpec` kind if the param genuinely is none of the five.
   unconditional per-frame draw.
 - Uniform convention: every numeric key in the params object uploads as
   `u_<key>` via the generic `uploadParams()`. Keep the engine free of
-  param-specific logic (one existing violation noted below).
+  param-specific logic (the one violation this used to have, the `isFreq`
+  rounding special-case, was resolved in TASK 7 — see Review notes).
 - `GuillocheEngine` stays framework-agnostic. UI code never touches GL.
 
 ## Domain vocabulary
@@ -705,18 +709,23 @@ tab that is being screenshotted but not foregrounded never draws. Check
 visibility before chasing the context cap. Playwright renders correctly
 because its pages are not backgrounded.
 
-`tsconfig.json` now maps `react`/`react-dom` through `paths` to this project's
-`@types`. Jig is linked from a sibling checkout carrying its own
-`@types/react` 19 while this app is on 18, and TypeScript otherwise sees two
-React type universes — `Link` fails with "cannot be used as a JSX component"
-and `npm run build` dies before Vite runs. This is the type-level twin of the
-runtime `resolve.dedupe` already in `vite.config.ts`.
+**Jig is `@jig-ui/react` from npm, and the app is on React 19** (bumped from 18
+when Jig published — its peer dep is `>=19`). This deleted three workarounds
+that only existed for the old `file:../jig` symlink + version mismatch:
+`resolve.dedupe` in `vite.config.ts`, `server.fs.allow` for the sibling
+checkout, and a `paths` override in `tsconfig.json` pinning React types. If you
+ever relink Jig locally (`npm link` or `file:`), the dedupe hack comes back —
+a symlinked dep resolves `react/jsx-runtime` through its own `node_modules`.
+
+React 19 moved `JSX.IntrinsicElements` from the global `JSX` namespace onto
+`React.JSX`, so `site/jsx.d.ts` augments BOTH (`declare global` and
+`declare module "react"`) for the `<guilloche-pattern>` custom-element typing.
 
 ## Preset thumbnails (Nate-initiated, post-TASK-9)
 
 `npm run thumbs` renders every preset through the real engine in real Chrome
 and writes `public/thumbs/<id>.webp`. **The output is committed and Netlify
-never runs the script** — pulling Chromium into a deploy to regenerate nine
+never runs the script** — pulling Chromium into a deploy to regenerate eleven
 images that change a few times a year is a bad trade.
 
 - **Playwright, not a headless GL binding.** The shader is `#version 300 es`,
@@ -769,7 +778,7 @@ images that change a few times a year is a bad trade.
   the app the next time `pattern.frag.glsl` changes. The script hashes the two
   shaders plus `presets.ts` and `schema.ts` into `scripts/thumbs.stamp.json`;
   `npm run thumbs -- --check` exits non-zero when that hash has moved. A
-  `--only` run deliberately does NOT write the stamp, since the other eight are
+  `--only` run deliberately does NOT write the stamp, since the other ten are
   then still at an older revision.
 
 The gallery tiles are hand-rolled in `ControlRail.tsx` rather than Jig Buttons

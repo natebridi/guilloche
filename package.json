@@ -5,6 +5,15 @@
   "license": "MIT",
   "author": "Nate Bridi",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/natebridi/guilloche.git"
+  },
+  "bugs": "https://github.com/natebridi/guilloche/issues",
+  "homepage": "https://github.com/natebridi/guilloche#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "guilloche",
     "rose-engine",
@@ -32,7 +41,8 @@
   },
   "files": [
     "dist-embed",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "dev": "vite",
@@ -44,15 +54,15 @@
     "prepublishOnly": "npm run build:embed"
   },
   "devDependencies": {
-    "@jig-ui/react": "file:../jig/packages/components",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@jig-ui/react": "^0.1.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "agentation": "^3.0.2",
     "playwright": "^1.62.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "typescript": "^5.6.2",
-    "vite": "^5.4.10"
+    "vite": "^7.3.6"
   }
 }

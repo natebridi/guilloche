@@ -4,7 +4,7 @@ Procedural guilloché (rose-engine) patterns rendered as a WebGL2 fragment
 shader — no geometry, no textures, no rendering library. Ships as a drop-in
 custom element and as a small programmatic API.
 
-**~13.6 kB gzipped**, self-contained (shaders are inlined at build time, so
+**~24 kB gzipped**, self-contained (shaders are inlined at build time, so
 there are no runtime asset fetches).
 
 ## Embed on a page
