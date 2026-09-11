@@ -24,7 +24,8 @@
     "web-component"
   ],
   "sideEffects": [
-    "./dist-embed/guilloche-element.js"
+    "./dist-embed/guilloche-element.js",
+    "./src/embed.ts"
   ],
   "types": "./dist-embed/types/index.d.ts",
   "module": "./dist-embed/guilloche.js",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Dialog, Icon, IconButton, Separator, Typography } from "@jig-ui/react";
+import { Link, Button, Dialog, Icon, IconButton, Separator, Stack, Typography } from "@jig-ui/react";
 import { SCHEMA } from "../schema";
 import { GROUP_SHOW_WHEN, groupsInOrder, metaOf } from "../paramMeta";
 import { PRESETS, findPreset, type Preset } from "../presets";
@@ -73,14 +73,14 @@ export function ControlRail({
           read as one confused block. One verb, three destinations — the icon
           and the word carry the action so each button is a single noun. */}
       <div className="rail-header">
-        <div className="share-row">
-          <span className="share-label">
-            <Icon icon="copy" />
-            <Typography as="span" with="caption02" tone="secondary">
-              Copy
-            </Typography>
-          </span>
-          <div className="share-actions">
+        <Stack direction="row" align="center" justify="between" mb="200">
+          <Link with="display06" underline={false} href="/">Guilloché</Link>
+        </Stack>
+        <Stack direction="row" align="center" justify="between">
+          <Typography as="span" with="caption02" tone="secondary">
+            <Icon icon="copy" /> Copy
+          </Typography>
+          <Stack direction="row" spacing="300">
             <Button
               size="sm"
               variant="secondary"
@@ -105,17 +105,15 @@ export function ControlRail({
             >
               {copied === "js" ? "Copied" : "JS"}
             </Button>
-          </div>
-        </div>
+          </Stack>
+        </Stack>
         {copied === "error" && (
           <Typography as="p" with="caption01" role="status" className="share-note">
             Clipboard blocked — the URL bar has the link.
           </Typography>
         )}
       </div>
-      {/* Not `decorative`: the boundary between the export toolbar and the
-          controls below is carried by this rule alone — there is no heading on
-          the header for a screen reader to hear instead. */}
+
       <Separator />
 
       <div className="rail-scroll">

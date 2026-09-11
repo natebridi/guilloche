@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Adorn,
+  Button,
   CodeBlock,
   Collapsible,
   Grid,
@@ -79,7 +80,7 @@ function TopBar() {
     >
       <Stack direction="row" align="baseline" spacing="400">
         <Typography with="display06">Guilloché</Typography>
-        <span className="mono-note">v0.1.0</span>
+        <Typography with="code01"><Adorn with="muted">v0.1.0</Adorn></Typography>
       </Stack>
       <Stack as="nav" direction="row" align="center" spacing="600">
         <Link href="https://www.npmjs.com/package/@natebridi/guilloche" with="body01">
@@ -159,10 +160,11 @@ function Hero() {
           spacing="500"
           px="500"
           py="400"
-          style={{ backgroundColor: `rgb(from ${tone?.css} r g b / 0.5)`, color: tone?.inkBody }}
+          style={{ backgroundColor: `${tone?.css}` }}
         >
-          <IconButton icon="caret-left" size="lg" label="Previous pattern" variant="primary" onClick={prev} />
-          <IconButton icon="caret-right" size="lg" label="Next pattern" variant="primary" onClick={next} />
+          <IconButton icon="caret-left" size="lg" label="Previous pattern" variant="smoke" onClick={prev} />
+          <Link variant="primary" href="/create" size="lg">Start building</Link>
+          <IconButton icon="caret-right" size="lg" label="Next pattern" variant="smoke" onClick={next} />
         </Stack>
       </div>
 
@@ -173,10 +175,10 @@ function Hero() {
       </Stack>
 
       <Stack className="wrap" direction="row" align="baseline" justify="center" spacing="300">
-        <Typography as="span" with="body01" tone="secondary">
+        <Typography as="span" with="body02" tone="secondary">
           Install package:
         </Typography>
-        <span className="mono-note">npm i @natebridi/guilloche</span>
+        <Adorn with="mono">npm i @n8bridi/guilloche</Adorn>
       </Stack>
 
     </Stack>
@@ -470,9 +472,9 @@ function Reference() {
         Parameter reference
       </Typography>
 
-      <Stack direction={{ xs: 'column', lg: 'row' }} spacing="600" alignSelf="stretch" align="stretch">
+      <Stack direction={{ xs: 'column', lg: 'row' }} style={{ width: 'stretch' }} spacing="600" alignSelf="stretch" align="stretch">
         {PARAM_COLUMNS.map((groups, i) => (<>
-          <Stack key={i} align="stretch" spacing="600">
+          <Stack key={i} style={{ width: 'stretch' }} spacing="600">
             {groups.map((group) => (
               <ParamGroup key={group} group={group} />
             ))}
@@ -539,7 +541,7 @@ function Footer() {
     >
       <Stack direction="row" align="baseline" spacing="400">
         <Typography with="display06">Guilloché</Typography>
-        <span className="mono-note">MIT · @natebridi/guilloche</span>
+        <Typography with="code01"><Adorn with="muted">@n8bridi/guilloche</Adorn></Typography>
       </Stack>
       <Typography as="span" with="caption02" tone="muted">
         Built by Nate Bridi

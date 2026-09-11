@@ -331,33 +331,14 @@ body {
 
 /* ---- Rail header ---- */
 
-/* Export lives here, above the scroll and outside every section, so it cannot
-   read as part of Presets. Darker than the rail so it registers as chrome
-   rather than as another group. */
+
 .rail-header {
   flex-shrink: 0;
   padding: 9px 12px;
-  background: var(--color-surfaces-body);
 }
-.share-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-/* Sized to their labels, not stretched: in a 320px rail three equal thirds
-   made "JS" a button four times wider than its word. */
-.share-actions {
-  display: flex;
-  gap: 4px;
-}
-.share-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  color: var(--color-text-secondary);
-}
+
+
+
 /* Spacing only; the type is Jig's. */
 .share-note {
   margin: 8px 0 0;

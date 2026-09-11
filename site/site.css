@@ -36,13 +36,6 @@ body {
   min-width: 0;
 }
 
-/* Small monospace annotations — version, install line, param keys. Not a Jig
-   Typography preset because it is a UI label rather than prose. */
-.mono-note {
-  font-family: var(--type-family-mono);
-  font-size: var(--type-scale-200);
-  color: var(--color-text-muted);
-}
 
 .lead {
   color: var(--color-text-secondary);
@@ -89,7 +82,7 @@ body {
     color: var(--color-text-primary);
     transition: color 0.35s ease;
 }
-/* The description panel, filled with the plate's own measured colour. */
+
 .hero-blurb {
   border-radius: var(--radius-600);
   background: var(--color-surfaces-card);
