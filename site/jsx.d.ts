@@ -3,7 +3,7 @@
 // Deliberately local to the demo rather than shipped from src/element.ts: the
 // package is framework-agnostic, and augmenting the global JSX namespace from
 // it would push React-specific types onto every consumer. If React ergonomics
-// become a goal, the right move is a separate "@natebridi/guilloche/react"
+// become a goal, the right move is a separate "@n8bridi/guilloche/react"
 // subpath export, not a global augmentation.
 
 import type { DetailedHTMLProps, HTMLAttributes } from "react";

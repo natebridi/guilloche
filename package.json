@@ -1,5 +1,5 @@
 {
-  "name": "@natebridi/guilloche",
+  "name": "@n8bridi/guilloche",
   "version": "0.1.0",
   "description": "Procedural guilloché (rose-engine) patterns as a WebGL2 custom element.",
   "license": "MIT",

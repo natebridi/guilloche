@@ -85,8 +85,6 @@ function TopBar() {
         <Link href="https://www.npmjs.com/package/@n8bridi/guilloche" with="body01">
           npm
         </Link>
-        {/* Icon-only, so the accessible name has to come from aria-label — and
-            there is no text for an underline to sit under. */}
         <Link
           href="https://github.com/natebridi/guilloche"
           with="body01"

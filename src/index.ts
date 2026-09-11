@@ -1,6 +1,6 @@
 // Package entry: the programmatic API, with NO side effects. Importing this
 // does not register the custom element — call defineGuillocheElement() for
-// that, or import "@natebridi/guilloche/element" which does it for you.
+// that, or import "@n8bridi/guilloche/element" which does it for you.
 
 export {
   GuillocheEngine,

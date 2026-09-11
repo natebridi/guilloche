@@ -11,7 +11,7 @@ there are no runtime asset fetches).
 
 ```html
 <script type="module"
-  src="https://cdn.jsdelivr.net/npm/@natebridi/guilloche@0.1/dist-embed/guilloche-element.js"></script>
+  src="https://cdn.jsdelivr.net/npm/@n8bridi/guilloche@0.1/dist-embed/guilloche-element.js"></script>
 
 <guilloche-pattern params="v1&pr=barleycorn" style="width:480px"></guilloche-pattern>
 ```
@@ -81,16 +81,16 @@ the underlying error in `detail`.
 ## Install
 
 ```sh
-npm install @natebridi/guilloche
+npm install @n8bridi/guilloche
 ```
 
 ```js
 // Register the element yourself:
-import { defineGuillocheElement } from "@natebridi/guilloche";
+import { defineGuillocheElement } from "@n8bridi/guilloche";
 defineGuillocheElement();
 
 // …or import the side-effecting entry:
-import "@natebridi/guilloche/element";
+import "@n8bridi/guilloche/element";
 ```
 
 Both are safe to import under SSR (Next.js, Astro) — registration no-ops
@@ -99,7 +99,7 @@ without a `window`.
 ## Programmatic use
 
 ```js
-import { mountGuilloche, decode, schemaDefaults } from "@natebridi/guilloche";
+import { mountGuilloche, decode, schemaDefaults } from "@n8bridi/guilloche";
 
 const handle = mountGuilloche(canvas, {
   params: { ...schemaDefaults(), ...decode("v1&pr=sunburst").params },
